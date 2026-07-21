@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 
-use super::models::{CatalogItem, ClientKind, DocumentInput, DocumentKind};
+use super::models::{CatalogItem, DocumentInput, DocumentKind};
 
 const MAX_LINE_QUANTITY: i64 = 100_000;
 pub const MAX_UNIT_PRICE_CENTS: i64 = 10_000_000;
@@ -80,11 +80,6 @@ pub fn validate_document(input: &DocumentInput) -> Result<(), Vec<String>> {
     if total_over_limit || total_cents > MAX_DOCUMENT_TOTAL_CENTS {
         errors.push("Le total du document dépasse la limite autorisée.".to_string());
     }
-    if matches!(input.client.kind, ClientKind::Professional) && input.client.name.trim().is_empty()
-    {
-        errors.push("La société du client professionnel est obligatoire.".to_string());
-    }
-
     if errors.is_empty() {
         Ok(())
     } else {
@@ -260,13 +255,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_professional_company_name() {
+    fn reports_missing_professional_name_once() {
         let mut doc = valid_doc();
         doc.client.kind = ClientKind::Professional;
         doc.client.name.clear();
         let errors = validate_document(&doc).unwrap_err();
-        assert!(
-            errors.contains(&"La société du client professionnel est obligatoire.".to_string())
+        assert_eq!(
+            errors,
+            vec!["Le nom du client est obligatoire.".to_string()]
         );
     }
 

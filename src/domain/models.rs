@@ -75,7 +75,9 @@ pub struct Document {
 
 impl Document {
     pub fn is_sent(&self) -> bool {
-        self.sent_at.is_some()
+        self.sent_at
+            .as_deref()
+            .is_some_and(|sent_at| !sent_at.trim().is_empty())
     }
 }
 
@@ -210,6 +212,9 @@ mod tests {
         assert_eq!(document.input.total_cents(), 850);
         assert!(document.is_invoiced);
         assert!(document.is_sent());
+
+        document.sent_at = Some("   ".to_string());
+        assert!(!document.is_sent());
 
         document.sent_at = None;
         assert!(!document.is_sent());
