@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Experimental offline Typst PDF export with embedded fonts and Android-private
+  output for the task 05 fidelity spike.
 - Desktop-faithful quote and invoice HTML rendering with embedded template and
   logo, escaped user content, grouped lines, totals, and print pagination.
 - Desktop domain models, euro formatting, and validation migrated with issued

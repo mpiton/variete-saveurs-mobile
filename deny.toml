@@ -39,3 +39,5 @@ wildcards = "deny"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Exact revision pinned in Cargo.toml for the quick-xml security fix.
+allow-git = ["https://github.com/typst/citationberg"]
