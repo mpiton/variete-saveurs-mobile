@@ -1,0 +1,446 @@
+:root {
+  --rouge: #C0182B;
+  --brun: #4A2C1A;
+  --creme: #F6F0E2;
+  --rose: #EBA4AE;
+  --or: #C49A45;
+  --gris: #6B5A4E;
+  --blanc: #FFFFFF;
+  --filet: #ECE3CF;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--brun);
+  background: var(--blanc);
+  font-size: 11px;
+  line-height: 1.32;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+h1,
+h2,
+h3,
+.brand-name {
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  border-bottom: 1px solid var(--or);
+  padding-bottom: 10px;
+}
+
+.header .logo {
+  display: block;
+  width: auto;
+  height: 90px;
+  object-fit: contain;
+}
+
+.brand-name {
+  margin-top: 4px;
+  color: var(--brun);
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+
+.document-box {
+  text-align: right;
+}
+
+.document-box h1 {
+  margin: 0;
+  color: var(--rouge);
+  font-size: 34px;
+  letter-spacing: 3px;
+}
+
+.document-box .nature {
+  margin-top: 3px;
+  color: var(--gris);
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.document-box .meta {
+  margin-top: 6px;
+  color: var(--brun);
+  font-size: 11px;
+}
+
+.document-box .meta div {
+  margin: 2px 0;
+}
+
+.parties {
+  display: flex;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.party {
+  flex: 1;
+  padding: 9px 11px;
+  background: var(--creme);
+  border: 1px solid var(--or);
+  border-radius: 4px;
+}
+
+.party .title {
+  margin: 0 0 5px;
+  color: var(--rouge);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.party .name {
+  color: var(--brun);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.party div {
+  margin: 1.5px 0;
+  overflow-wrap: anywhere;
+}
+
+.party .secondary {
+  color: var(--gris);
+}
+
+.section-title {
+  margin: 16px 0 7px;
+  padding-bottom: 3px;
+  color: var(--rouge);
+  border-bottom: 1px solid var(--or);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 14px;
+}
+
+table.lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+table.lines thead {
+  display: table-header-group;
+}
+
+table.lines th {
+  padding: 7px 9px;
+  color: var(--blanc);
+  background: var(--rouge);
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-align: left;
+}
+
+table.lines th.num,
+table.lines td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+table.lines td {
+  padding: 5.5px 9px;
+  color: var(--brun);
+  border-bottom: 1px solid var(--filet);
+}
+
+table.lines tr.item.alt td {
+  background: var(--creme);
+}
+
+table.lines tr.group td {
+  padding: 5px 9px;
+  color: var(--brun);
+  background: var(--rose);
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+table.lines td.desc {
+  width: 58%;
+  overflow-wrap: anywhere;
+}
+
+.totals-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.totals {
+  width: 62%;
+  max-width: 300px;
+}
+
+.totals .row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+
+.totals .sub {
+  justify-content: flex-start;
+  color: var(--gris);
+  font-size: 10.5px;
+  font-style: italic;
+}
+
+.totals .ttc {
+  margin-top: 6px;
+  padding: 8px 10px;
+  color: var(--rouge);
+  background: var(--creme);
+  border: 2px solid var(--rouge);
+  border-radius: 4px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.totals .ttc .row {
+  padding: 0;
+}
+
+.conditions,
+.payment-block {
+  margin-top: 16px;
+  padding: 9px 12px;
+  background: var(--creme);
+  border: 1px solid var(--or);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.conditions .title,
+.payment-block .title {
+  margin-bottom: 4px;
+  color: var(--rouge);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.conditions ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.conditions li {
+  margin: 2px 0;
+}
+
+.payment-block div {
+  margin: 2px 0;
+}
+
+.payment-block .mentions {
+  margin-top: 5px;
+  color: var(--gris);
+  font-size: 10px;
+}
+
+.closing {
+  margin: 12px 0 0;
+  color: var(--gris);
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 12px;
+  text-align: center;
+}
+
+.agreement {
+  margin-top: 14px;
+  font-size: 11px;
+}
+
+.agreement .intro {
+  margin-bottom: 8px;
+  color: var(--brun);
+  font-weight: 700;
+}
+
+.signatures {
+  display: flex;
+  gap: 16px;
+}
+
+.sign {
+  flex: 1;
+  min-height: 96px;
+  padding: 9px 11px;
+  border: 1px solid var(--or);
+  border-radius: 4px;
+}
+
+.sign .role {
+  margin-bottom: 4px;
+  color: var(--rouge);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sign .mention {
+  color: var(--gris);
+  font-size: 10px;
+  font-style: italic;
+}
+
+.footer {
+  margin-top: 16px;
+  padding-top: 8px;
+  color: var(--gris);
+  border-top: 1px solid var(--or);
+  font-size: 9.5px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.footer b {
+  color: var(--brun);
+}
+
+@page {
+  size: A4;
+  margin: 10mm 10mm 14mm;
+
+  @bottom-center {
+    content: "Page " counter(page) " / " counter(pages);
+    color: var(--gris, #6b5a4e);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 9.5px;
+  }
+}
+
+/* The PNG export screenshots this document with screen media (print gets the
+   same margin from @page), so pad the body to keep a white margin around the page. */
+@media screen {
+  body {
+    padding: 10mm;
+  }
+}
+
+/* Compact A4 spacing shared by the PDF (print) and the PNG (screen) export. */
+@media print, screen {
+  .header {
+    padding-bottom: 7px;
+  }
+
+  .header .logo {
+    height: 74px;
+  }
+
+  .parties {
+    margin-top: 9px;
+  }
+
+  .party {
+    padding: 7px 10px;
+  }
+
+  .section-title {
+    margin: 9px 0 5px;
+  }
+
+  table.lines th {
+    padding: 5px 9px;
+  }
+
+  table.lines td,
+  table.lines tr.group td {
+    padding: 3.5px 9px;
+  }
+
+  .totals-wrap {
+    margin-top: 7px;
+  }
+
+  .totals .row {
+    padding: 3px 10px;
+  }
+
+  .totals .ttc {
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+
+  .conditions,
+  .payment-block {
+    margin-top: 9px;
+    padding: 7px 11px;
+  }
+
+  .conditions li {
+    margin: 1px 0;
+  }
+
+  .agreement {
+    margin-top: 9px;
+  }
+
+  .agreement .intro {
+    margin-bottom: 6px;
+  }
+
+  .sign {
+    min-height: 60px;
+    padding: 7px 10px;
+  }
+
+  .footer {
+    margin-top: 9px;
+    padding-top: 6px;
+  }
+
+  table.lines {
+    page-break-inside: auto;
+  }
+
+  tr,
+  .parties,
+  .conditions,
+  .payment-block,
+  .agreement,
+  .totals-wrap,
+  .signatures {
+    page-break-inside: avoid;
+  }
+
+  /* Keep a group header attached to its first item across page breaks. */
+  tr.group {
+    break-after: avoid-page;
+    page-break-after: avoid;
+  }
+
+  /* Keep each group (label + items) on one page so the label is never
+     stranded away from its rows. Oversized groups still split. */
+  tbody.group-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

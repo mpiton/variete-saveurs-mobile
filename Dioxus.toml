@@ -1,0 +1,11 @@
+[application]
+name = "devis-mobile"
+
+[bundle]
+identifier = "fr.variete_saveurs.devis_factures"
+publisher = "Variété de Saveurs"
+
+# Android applicationId segments only allow [A-Za-z0-9_], so the hyphens from
+# the spec ("fr.variete-saveurs.devis-factures") are replaced by underscores.
+[android]
+identifier = "fr.variete_saveurs.devis_factures"
