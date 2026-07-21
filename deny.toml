@@ -1,0 +1,41 @@
+# cargo-deny — supply-chain gates (CLAUDE.md §Sécurité supply chain, ARCHI §8 step 5).
+
+[graph]
+# Only what we actually compile: the phone target and the Linux host (CI + dev tests).
+targets = ["aarch64-linux-android", "x86_64-unknown-linux-gnu"]
+
+[advisories]
+yanked = "deny"
+# Vulnerabilities always block. Unmaintained blocks on our direct deps only — the
+# dioxus/wry transitive tree (gtk3-rs, fxhash, paste…) is theirs to fix, not ours.
+unmaintained = "workspace"
+
+[licenses]
+# devis-mobile itself is a private app (publish = false), no license required.
+private = { ignore = true }
+# Exactly the licenses observed in the tree (cargo deny list) — extend only on purpose.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+# ponytail: dioxus' tree carries many duplicate versions — warn, don't block; tighten later if it matters
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
