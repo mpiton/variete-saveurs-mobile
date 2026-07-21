@@ -4,4 +4,5 @@
 
 pub mod models;
 pub mod money;
+pub mod render;
 pub mod validation;
