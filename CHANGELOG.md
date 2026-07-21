@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Desktop domain models, euro formatting, and validation migrated with issued
+  `Document` state and regression tests.
 - CI workflow with the 5 blocking gates from ARCHI §8 (fmt, clippy, tests,
   domain coverage ≥ 85 %, audit + deny) on the Linux host, plus `deny.toml`
   (licenses, advisories, duplicate versions, sources).
