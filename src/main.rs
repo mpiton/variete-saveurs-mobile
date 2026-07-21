@@ -3,5 +3,5 @@ mod platform;
 mod ui;
 
 fn main() {
-        dioxus::launch(  ui::app  );
+    dioxus::launch(ui::app);
 }
