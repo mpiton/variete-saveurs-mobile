@@ -22,19 +22,24 @@ fn domain_has_no_platform_or_dioxus_imports() {
     rust_sources(&domain, &mut files);
     assert!(!files.is_empty(), "src/domain contains no Rust files");
 
+    let mut violations = Vec::new();
     for file in files {
         let source = fs::read_to_string(&file).expect("read source file");
         for (i, line) in source.lines().enumerate() {
+            // ponytail: strips `//` comments only — a `/* dioxus */` block
+            // comment false-positives (fails strict, never lets a real import
+            // through). Move to `syn` if that ever bites.
             let code = line.split("//").next().unwrap_or("");
             for forbidden in ["platform::", "crate::platform", "dioxus"] {
-                assert!(
-                    !code.contains(forbidden),
-                    "{}:{} uses `{}` — domain must stay pure (ARCHI §2)",
-                    file.display(),
-                    i + 1,
-                    forbidden
-                );
+                if code.contains(forbidden) {
+                    violations.push(format!("{}:{} uses `{}`", file.display(), i + 1, forbidden));
+                }
             }
         }
     }
+    assert!(
+        violations.is_empty(),
+        "domain must stay pure (ARCHI §2):\n{}",
+        violations.join("\n")
+    );
 }
