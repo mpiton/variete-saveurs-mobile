@@ -12,10 +12,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via one of these methods:
-
-1. **GitHub Security Advisories**: Use the [Security Advisory](https://github.com/mpiton/variete-saveurs-mobile/security/advisories/new) feature
-2. **Email**: Send details to `security@mpiton.dev`
+Instead, please report them via [GitHub Security Advisories](https://github.com/mpiton/variete-saveurs-mobile/security/advisories/new).
 
 ### What to Include
 
