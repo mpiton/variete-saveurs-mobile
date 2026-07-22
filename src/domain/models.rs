@@ -7,6 +7,15 @@ pub enum DocumentKind {
     Invoice,
 }
 
+impl DocumentKind {
+    pub(crate) const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Quote => "quote",
+            Self::Invoice => "invoice",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ClientKind {
@@ -67,6 +76,7 @@ pub struct Document {
     pub id: i64,
     pub number: i64,
     pub input: DocumentInput,
+    pub total_cents: i64,
     pub source_quote_id: Option<i64>,
     pub sent_at: Option<String>,
     pub created_at: String,
@@ -203,6 +213,7 @@ mod tests {
                     unit_price_cents: 850,
                 }],
             },
+            total_cents: 850,
             source_quote_id: None,
             sent_at: Some("2026-07-02T10:30:00Z".to_string()),
             created_at: "2026-07-01T09:00:00Z".to_string(),

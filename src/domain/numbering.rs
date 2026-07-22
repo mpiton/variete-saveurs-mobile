@@ -5,7 +5,7 @@ use crate::domain::models::DocumentKind;
 pub fn next_number(connection: &Connection, kind: &DocumentKind) -> rusqlite::Result<i64> {
     connection.query_row(
         "SELECT next_number FROM counters WHERE name = ?1",
-        params![counter_name(kind)],
+        params![kind.as_str()],
         |row| row.get(0),
     )
 }
@@ -16,16 +16,9 @@ pub fn reserve_number(transaction: &Transaction<'_>, kind: &DocumentKind) -> rus
          SET next_number = next_number + 1
          WHERE name = ?1
          RETURNING next_number - 1",
-        params![counter_name(kind)],
+        params![kind.as_str()],
         |row| row.get(0),
     )
-}
-
-fn counter_name(kind: &DocumentKind) -> &'static str {
-    match kind {
-        DocumentKind::Quote => "quote",
-        DocumentKind::Invoice => "invoice",
-    }
 }
 
 #[cfg(test)]
