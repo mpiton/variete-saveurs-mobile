@@ -38,4 +38,7 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+required-git-spec = "rev"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Citationberg revision patched to require quick-xml 0.41 for RUSTSEC-2026-0194/0195.
+allow-git = ["https://github.com/typst/citationberg"]
