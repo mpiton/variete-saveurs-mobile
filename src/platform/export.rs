@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -30,7 +31,9 @@ const FONT_DATA: [&[u8]; 6] = [
     include_bytes!("../../assets/fonts/LiberationSans-Italic.ttf"),
 ];
 const REFERENCE_NUMBER: i64 = 9;
+const MAX_PUBLISHED_GENERATIONS: usize = 3;
 static EXPORT_LOCK: Mutex<()> = Mutex::new(());
+static GENERATION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 pub struct ReferenceExport {
@@ -82,6 +85,8 @@ pub fn generate_reference_export() -> Result<ReferenceExport, ExportError> {
 struct CompiledPdf {
     bytes: Vec<u8>,
     pages: usize,
+    #[cfg(test)]
+    page_texts: Vec<String>,
 }
 
 fn compile_reference_pdf(input: &DocumentInput) -> Result<CompiledPdf, ExportError> {
@@ -100,8 +105,32 @@ fn compile_reference_pdf(input: &DocumentInput) -> Result<CompiledPdf, ExportErr
     let bytes = typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default())
         .map_err(|errors| ExportError::Typst(diagnostics("PDF export", &errors, &world)))?;
     let pages = document.pages().len();
+    #[cfg(test)]
+    let page_texts = document
+        .pages()
+        .iter()
+        .map(|page| frame_text(&page.frame))
+        .collect();
 
-    Ok(CompiledPdf { bytes, pages })
+    Ok(CompiledPdf {
+        bytes,
+        pages,
+        #[cfg(test)]
+        page_texts,
+    })
+}
+
+#[cfg(test)]
+fn frame_text(frame: &typst::layout::Frame) -> String {
+    let mut output = String::new();
+    for (_, item) in frame.items() {
+        match item {
+            typst::layout::FrameItem::Group(group) => output.push_str(&frame_text(&group.frame)),
+            typst::layout::FrameItem::Text(text) => output.push_str(&text.text),
+            _ => {}
+        }
+    }
+    output
 }
 
 fn publish_generation(
@@ -109,14 +138,7 @@ fn publish_generation(
     html: &[u8],
     pdf: &[u8],
 ) -> Result<(PathBuf, PathBuf), ExportError> {
-    let name = format!(
-        "reference-{}-{}",
-        std::process::id(),
-        generation_timestamp()
-    );
-    let staging = exports.join(format!(".{name}.tmp"));
-    let published = exports.join(name);
-    fs::create_dir(&staging).map_err(|source| storage_error(&staging, source))?;
+    let (staging, published) = create_generation_directory(exports)?;
 
     let result = (|| {
         write_file(&staging.join("reference.html"), html)?;
@@ -131,10 +153,71 @@ fn publish_generation(
         return Err(error);
     }
 
+    prune_published_generations(exports, &published);
+
     Ok((
         published.join("reference.html"),
         published.join("candidate.pdf"),
     ))
+}
+
+fn create_generation_directory(exports: &Path) -> Result<(PathBuf, PathBuf), ExportError> {
+    loop {
+        let sequence = GENERATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        // Fixed-width timestamp first keeps directory names chronologically sortable.
+        let name = format!(
+            "reference-{:039}-{}-{sequence:020}",
+            generation_timestamp(),
+            std::process::id(),
+        );
+        let staging = exports.join(format!(".{name}.tmp"));
+        let published = exports.join(name);
+
+        if published.exists() {
+            continue;
+        }
+
+        match fs::create_dir(&staging) {
+            Ok(()) => return Ok((staging, published)),
+            Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(source) => return Err(storage_error(&staging, source)),
+        }
+    }
+}
+
+fn prune_published_generations(exports: &Path, current: &Path) {
+    let entries = match fs::read_dir(exports) {
+        Ok(entries) => entries,
+        Err(error) => {
+            eprintln!("Export retention scan failed: {error}");
+            return;
+        }
+    };
+
+    let mut previous = entries
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            let is_generation = entry.file_type().ok()?.is_dir()
+                && entry.file_name().to_str()?.starts_with("reference-");
+            let modified = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .unwrap_or(UNIX_EPOCH);
+            (is_generation && path != current).then_some((modified, path))
+        })
+        .collect::<Vec<_>>();
+    previous.sort();
+
+    let excess = (previous.len() + 1).saturating_sub(MAX_PUBLISHED_GENERATIONS);
+    for (_, path) in previous.into_iter().take(excess) {
+        if let Err(error) = fs::remove_dir_all(&path) {
+            eprintln!(
+                "Export retention cleanup failed for {}: {error}",
+                path.display()
+            );
+        }
+    }
 }
 
 fn generation_timestamp() -> u128 {
@@ -422,7 +505,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        compile_reference_pdf, generation_timestamp, publish_generation, reference_document,
+        MAX_PUBLISHED_GENERATIONS, compile_reference_pdf, generation_timestamp, publish_generation,
+        reference_document,
     };
 
     #[test]
@@ -450,6 +534,12 @@ mod tests {
             "expected at least 3 pages, got {}",
             pdf.pages
         );
+        assert!(
+            pdf.page_texts
+                .iter()
+                .all(|page| page.contains("Groupe long")),
+            "the group name should repeat on every continuation page"
+        );
     }
 
     #[test]
@@ -467,6 +557,57 @@ mod tests {
         assert_eq!(html.parent(), pdf.parent());
         assert_eq!(fs::read(html).expect("HTML should exist"), b"html");
         assert_eq!(fs::read(pdf).expect("PDF should exist"), b"pdf");
+        fs::remove_dir_all(exports).expect("test export directory should be removed");
+    }
+
+    #[test]
+    fn gives_each_generation_a_unique_directory() {
+        let exports = std::env::temp_dir().join(format!(
+            "devis-mobile-export-unique-test-{}-{}",
+            std::process::id(),
+            generation_timestamp()
+        ));
+        fs::create_dir(&exports).expect("test export directory should be created");
+
+        let first = publish_generation(&exports, b"first html", b"first pdf")
+            .expect("first generation should be published");
+        let second = publish_generation(&exports, b"second html", b"second pdf")
+            .expect("second generation should be published");
+
+        assert_ne!(first.0.parent(), second.0.parent());
+        assert!(first.0.exists());
+        assert!(second.0.exists());
+        fs::remove_dir_all(exports).expect("test export directory should be removed");
+    }
+
+    #[test]
+    fn retains_only_the_latest_generations() {
+        let exports = std::env::temp_dir().join(format!(
+            "devis-mobile-export-retention-test-{}-{}",
+            std::process::id(),
+            generation_timestamp()
+        ));
+        fs::create_dir(&exports).expect("test export directory should be created");
+
+        let mut latest_html = None;
+        for index in 0..(MAX_PUBLISHED_GENERATIONS + 2) {
+            let html = format!("html {index}");
+            let (html_path, _) = publish_generation(&exports, html.as_bytes(), b"pdf")
+                .expect("generation should be published");
+            latest_html = Some(html_path);
+        }
+
+        let generation_count = fs::read_dir(&exports)
+            .expect("export directory should be readable")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .count();
+        assert_eq!(generation_count, MAX_PUBLISHED_GENERATIONS);
+        assert!(
+            latest_html
+                .expect("latest generation should exist")
+                .exists()
+        );
         fs::remove_dir_all(exports).expect("test export directory should be removed");
     }
 }

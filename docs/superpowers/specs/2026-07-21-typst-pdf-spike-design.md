@@ -49,16 +49,26 @@ Le même `DocumentInput` de référence alimente deux sorties :
 
 ```text
 DocumentInput
-├── renderer HTML existant ──→ reference.html ──→ Chromium desktop ──→ reference.pdf
-└── template Typst embarqué ─→ compilateur Typst Android ─────────────→ candidate.pdf
+├── renderer HTML existant ──→ reference.html ─┐
+└── template Typst embarqué ─→ candidate.pdf ──┴─→ génération mobile atomique
+
+génération mobile extraite
+├── reference.html ──→ Chromium desktop ──→ reference.pdf ─┐
+└── candidate.pdf ──────────────────────────────────────────┴─→ comparaison
 ```
 
 Le spike prépare `reference.html` et `candidate.pdf` dans un répertoire de
 génération temporaire, puis publie la paire par renommage du répertoire vers
-`exports/reference-<génération>/`. Une erreur supprime la génération temporaire,
-donc un nouveau HTML ne peut pas être associé à un ancien PDF. Les deux fichiers
-sont extraits avec `adb` ; Chromium produit ensuite le PDF desktop depuis le HTML
-exact généré par le mobile.
+`exports/reference-<génération>/`. Le stockage privé contient donc la source HTML
+immuable et le PDF candidat, jamais `reference.pdf`. Une erreur supprime la
+génération temporaire, donc un nouveau HTML ne peut pas être associé à un ancien
+PDF candidat. L'app conserve la génération courante et les deux précédentes.
+
+Après extraction de ce répertoire unique avec `adb`, Chromium produit
+`reference.pdf` depuis son `reference.html`. La comparaison ne commence qu'après
+la réussite de Chromium et utilise ce PDF avec le `candidate.pdf` du même
+répertoire extrait. Un échec Chromium invalide la comparaison entière ; aucun
+`reference.pdf` d'une autre génération n'est réutilisé.
 
 Le document de référence contient :
 
@@ -84,7 +94,7 @@ Le prototype :
 - compile un template et ses données entièrement embarqués, sans import Typst
   distant ;
 - effectue le travail hors du thread UI ;
-- publie les deux artefacts ensemble après leur écriture complète ;
+- publie la source HTML et le PDF candidat ensemble après leur écriture complète ;
 - renvoie un `Result`, sans `unwrap()` ou `expect()` sur le chemin utilisateur ;
 - conserve les détails techniques en anglais pour les logs et présente un
   message français à l'utilisatrice.
@@ -114,12 +124,15 @@ Le prototype :
 - mesure du temps de génération et de l'augmentation de taille de l'APK.
 
 Un temps supérieur à 5 secondes sur le téléphone ou une augmentation d'APK
-supérieure à 25 Mio déclenche une décision explicite ; ce n'est pas masqué comme
+supérieure à 25 MiB déclenche une décision explicite ; ce n'est pas masqué comme
 un succès du spike.
 
-Mesure après suppression des symboles release, appliquée aux deux builds :
-baseline `12 871 861` octets, candidat `38 347 713` octets, soit un delta de
-`25 475 852` octets (`24,296 Mio`) et `0,704 Mio` de marge sous le seuil.
+Mesure reproductible sur APK `x86_64` release propre, avec suppression des
+symboles appliquée aux deux builds : baseline `origin/main` (`d887c63`) de
+`12 871 861` octets, candidat corrigé de `38 356 969` octets, soit un delta de
+`25 485 108` octets (`24,304 MiB`, avec 1 MiB = 1 048 576 octets) et `0,696 MiB`
+de marge. **Gate APK : réussi.** L'ancien delta de `26,885 MiB`, calculé avec un
+artefact baseline non comparable, est remplacé par cette mesure même profil.
 
 ## Critères de décision
 

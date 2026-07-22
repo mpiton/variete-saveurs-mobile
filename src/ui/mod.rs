@@ -56,11 +56,11 @@ pub fn app() -> Element {
                             )
                         });
 
-                        match worker_status.try_write() {
-                            Ok(mut status) => *status = next,
-                            Err(error) => {
-                                eprintln!("Reference PDF status update skipped: {error}");
-                            }
+                        let status_update = std::panic::catch_unwind(
+                            std::panic::AssertUnwindSafe(|| *worker_status.write() = next),
+                        );
+                        if status_update.is_err() {
+                            eprintln!("Reference PDF status target is no longer mounted");
                         }
                     });
 

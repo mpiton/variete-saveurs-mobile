@@ -105,12 +105,14 @@
   columns: columns,
   inset: 0pt,
   stroke: none,
-  table.cell(
-    colspan: 4,
-    fill: pink,
-    inset: (x: 6.75pt, y: 3.75pt),
-    stroke: (bottom: 0.4pt + rule),
-  )[#text(font: serif, weight: "bold", tracking: 0.35pt)[#group.name]],
+  table.header(
+    table.cell(
+      colspan: 4,
+      fill: pink,
+      inset: (x: 6.75pt, y: 3.75pt),
+      stroke: (bottom: 0.4pt + rule),
+    )[#text(font: serif, weight: "bold", tracking: 0.35pt)[#group.name]],
+  ),
   ..group.lines.map(line => {
     let background = if line.alternate { cream } else { white }
     let cell = (body, alignment: left) => table.cell(
