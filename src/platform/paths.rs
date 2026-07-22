@@ -4,6 +4,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum PathError {
+    #[error("Impossible de préparer le stockage privé de l'application.")]
+    CreateDirectory(#[from] std::io::Error),
     #[cfg(target_os = "android")]
     #[error("Impossible d'accéder au stockage privé de l'application.")]
     PrivateStorage,
@@ -13,12 +15,13 @@ pub fn exports_dir() -> Result<PathBuf, PathError> {
     Ok(app_files_dir()?.join("exports"))
 }
 
-#[expect(
-    dead_code,
-    reason = "database initialization lands before app state in this sprint"
-)]
 pub fn database_path() -> Result<PathBuf, PathError> {
-    Ok(app_files_dir()?.join("devis-factures.sqlite3"))
+    database_path_from(app_files_dir()?)
+}
+
+fn database_path_from(directory: PathBuf) -> Result<PathBuf, PathError> {
+    std::fs::create_dir_all(&directory)?;
+    Ok(directory.join("devis-factures.sqlite3"))
 }
 
 #[cfg(target_os = "android")]
@@ -51,4 +54,20 @@ fn app_files_dir() -> Result<PathBuf, PathError> {
 #[cfg(not(target_os = "android"))]
 fn app_files_dir() -> Result<PathBuf, PathError> {
     Ok(std::env::temp_dir().join("devis-mobile"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::database_path_from;
+
+    #[test]
+    fn database_path_creates_its_parent_directory() {
+        let root = tempfile::tempdir().expect("create temp directory");
+        let directory = root.path().join("private");
+
+        let path = database_path_from(directory.clone()).expect("prepare database path");
+
+        assert!(directory.is_dir());
+        assert_eq!(path, directory.join("devis-factures.sqlite3"));
+    }
 }

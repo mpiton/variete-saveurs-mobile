@@ -1,9 +1,12 @@
 //! Dioxus RSX screens and components. Orchestration only — business logic
 //! lives in `domain`.
 
+use std::sync::Arc;
+
 use dioxus::prelude::*;
 
-use crate::platform::export::generate_reference_export;
+use crate::domain::db::open_database;
+use crate::platform::{export::generate_reference_export, paths::database_path};
 
 const FONT_LICENSE: &str = include_str!("../../assets/fonts/LICENSE");
 
@@ -14,6 +17,15 @@ enum ExportStatus {
 }
 
 pub fn app() -> Element {
+    let database = use_context_provider(|| {
+        let path = database_path().map_err(|error| error.to_string())?;
+        let connection = open_database(&path).map_err(|error| {
+            eprintln!("Database initialization failed: {error}");
+            "Impossible d'ouvrir la base locale.".to_string()
+        })?;
+        Ok::<_, String>(Arc::new(connection))
+    });
+    let database_error = database.as_ref().err().cloned();
     let mut status = use_signal_sync(|| ExportStatus::Ready);
     let (running, message) = match &*status.read() {
         ExportStatus::Ready => (
@@ -26,6 +38,9 @@ pub fn app() -> Element {
 
     rsx! {
         h1 { "Devis & Factures" }
+        if let Some(error) = database_error {
+            p { role: "alert", "{error}" }
+        }
         button {
             disabled: running,
             onclick: move |_| {

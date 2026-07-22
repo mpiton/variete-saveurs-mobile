@@ -37,7 +37,7 @@ pub fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             issue_date TEXT NOT NULL,
             event_date TEXT NOT NULL,
             payment_terms TEXT NOT NULL,
-            client_kind TEXT NOT NULL,
+            client_kind TEXT NOT NULL CHECK (client_kind IN ('individual', 'professional')),
             client_name TEXT NOT NULL,
             client_address TEXT NOT NULL,
             client_email TEXT,
@@ -49,8 +49,20 @@ pub fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             source_quote_id INTEGER REFERENCES documents(id),
             sent_at TEXT,
             created_at TEXT NOT NULL,
+            CHECK (source_quote_id IS NULL OR kind = 'invoice'),
             UNIQUE (kind, number)
         );
+
+        CREATE TRIGGER IF NOT EXISTS documents_source_quote_is_quote
+        BEFORE INSERT ON documents
+        WHEN NEW.source_quote_id IS NOT NULL
+             AND NOT EXISTS (
+                 SELECT 1 FROM documents
+                 WHERE id = NEW.source_quote_id AND kind = 'quote'
+             )
+        BEGIN
+            SELECT RAISE(ABORT, 'source_quote_id must reference a quote');
+        END;
 
         CREATE TABLE IF NOT EXISTS draft (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -124,6 +136,25 @@ mod tests {
             .expect("query table info")
             .collect::<rusqlite::Result<_>>()
             .expect("collect table columns")
+    }
+
+    fn insert_document(
+        connection: &Connection,
+        kind: &str,
+        client_kind: &str,
+        number: i64,
+        source_quote_id: Option<i64>,
+    ) -> rusqlite::Result<usize> {
+        connection.execute(
+            "INSERT INTO documents (
+                kind, number, issue_date, event_date, payment_terms,
+                client_kind, client_name, client_address, lines_json,
+                total_cents, source_quote_id, created_at
+             ) VALUES (?1, ?2, '2026-07-22', '2026-07-23', 'à réception',
+                       ?3, 'Client', 'Adresse', '[]', 0, ?4,
+                       '2026-07-22T10:00:00Z')",
+            params![kind, number, client_kind, source_quote_id],
+        )
     }
 
     #[test]
@@ -208,24 +239,12 @@ mod tests {
         let (_file, connection) = temp_connection();
         migrate(&connection).expect("migrate");
 
-        let insert_document = |kind: &str, number: i64, source_quote_id: Option<i64>| {
-            connection.execute(
-                "INSERT INTO documents (
-                    kind, number, issue_date, event_date, payment_terms,
-                    client_kind, client_name, client_address, lines_json,
-                    total_cents, source_quote_id, created_at
-                 ) VALUES (?1, ?2, '2026-07-22', '2026-07-23', 'à réception',
-                           'individual', 'Client', 'Adresse', '[]', 0, ?3,
-                           '2026-07-22T10:00:00Z')",
-                params![kind, number, source_quote_id],
-            )
-        };
-
-        assert!(insert_document("receipt", 1, None).is_err());
-        insert_document("quote", 10, None).expect("insert quote");
-        assert!(insert_document("quote", 10, None).is_err());
-        insert_document("invoice", 10, Some(1)).expect("insert converted invoice");
-        assert!(insert_document("invoice", 11, Some(999)).is_err());
+        assert!(insert_document(&connection, "receipt", "individual", 1, None).is_err());
+        insert_document(&connection, "quote", "individual", 10, None).expect("insert quote");
+        assert!(insert_document(&connection, "quote", "individual", 10, None).is_err());
+        insert_document(&connection, "invoice", "professional", 10, Some(1))
+            .expect("insert converted invoice");
+        assert!(insert_document(&connection, "invoice", "individual", 11, Some(999)).is_err());
         assert!(
             connection
                 .execute(
@@ -234,6 +253,27 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    #[test]
+    fn rejects_unknown_client_kinds() {
+        let (_file, connection) = temp_connection();
+        migrate(&connection).expect("migrate");
+
+        assert!(insert_document(&connection, "quote", "association", 10, None).is_err());
+    }
+
+    #[test]
+    fn only_invoices_can_reference_quotes() {
+        let (_file, connection) = temp_connection();
+        migrate(&connection).expect("migrate");
+        insert_document(&connection, "quote", "individual", 10, None).expect("insert quote");
+        insert_document(&connection, "invoice", "professional", 1, None).expect("insert invoice");
+
+        assert!(insert_document(&connection, "quote", "individual", 11, Some(1)).is_err());
+        assert!(insert_document(&connection, "invoice", "individual", 2, Some(2)).is_err());
+        insert_document(&connection, "invoice", "individual", 2, Some(1))
+            .expect("reference quote from invoice");
     }
 
     #[test]
