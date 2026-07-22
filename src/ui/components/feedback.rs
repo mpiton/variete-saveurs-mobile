@@ -1,14 +1,10 @@
 use dioxus::prelude::*;
 
-use super::actions::{Button, ButtonVariant};
-
-const OPEN_BOTTOM_SHEET: &str = r#"
-    const sheet = document.getElementById('bottom-sheet-dialog');
-    if (sheet && !sheet.open) sheet.showModal();
-"#;
+use super::actions::{Button, ButtonVariant, LucideIcon};
 
 #[component]
 pub fn BottomSheet(
+    id: String,
     title: String,
     open: bool,
     on_dismiss: EventHandler<()>,
@@ -20,22 +16,25 @@ pub fn BottomSheet(
         return rsx! {};
     }
 
+    let title_id = format!("{id}-title");
+    let mounted_id = id.clone();
+
     rsx! {
         dialog {
-            id: "bottom-sheet-dialog",
-            class: "bottom-sheet-layer",
-            aria_labelledby: "bottom-sheet-title",
+            id,
+            class: if error { "bottom-sheet-layer is-error" } else { "bottom-sheet-layer" },
+            aria_labelledby: title_id.clone(),
             aria_busy: loading,
-            aria_invalid: error,
             oncancel: move |_| on_dismiss.call(()),
             onmounted: move |_| {
-                let _ = document::eval(OPEN_BOTTOM_SHEET);
+                let script = open_bottom_sheet_script(&mounted_id);
+                let _ = document::eval(&script);
             },
             section {
                 class: "bottom-sheet",
                 div { class: "bottom-sheet__handle", aria_hidden: "true" }
-                h2 { id: "bottom-sheet-title", "{title}" }
-                div { class: "bottom-sheet__content", aria_hidden: loading, {children} }
+                h2 { id: title_id, "{title}" }
+                div { class: "bottom-sheet__content", aria_hidden: loading, inert: loading, {children} }
                 if loading {
                     span { class: "spinner", aria_hidden: "true" }
                 }
@@ -51,9 +50,12 @@ pub fn BottomSheet(
 }
 
 #[component]
-pub fn Snackbar(message: String) -> Element {
+pub fn Snackbar(message: String, #[props(default = true)] announce: bool) -> Element {
     rsx! {
-        div { class: "snackbar", role: "status", aria_live: "polite",
+        div {
+            class: "snackbar",
+            role: announce.then_some("status"),
+            aria_live: announce.then_some("polite"),
             span { "{message}" }
         }
     }
@@ -97,19 +99,17 @@ pub fn EmptyState(
 #[component]
 fn FileIcon() -> Element {
     rsx! {
-        span { aria_hidden: "true",
-            svg {
-                class: "lucide empty-state__icon",
-                view_box: "0 0 24 24",
-                fill: "none",
-                stroke: "currentColor",
-                stroke_width: "1.5",
-                stroke_linecap: "round",
-                stroke_linejoin: "round",
-                path { d: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" }
-                path { d: "M14 2v6h6" }
-                path { d: "M9 15h6" }
-            }
+        LucideIcon { class: "lucide empty-state__icon", stroke_width: "1.5",
+            path { d: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" }
+            path { d: "M14 2v6h6" }
+            path { d: "M9 15h6" }
         }
     }
+}
+
+fn open_bottom_sheet_script(id: &str) -> String {
+    let id = serde_json::to_string(id).expect("serializing a string cannot fail");
+    format!(
+        "const sheet = document.getElementById({id}); if (sheet && !sheet.open) sheet.showModal();"
+    )
 }

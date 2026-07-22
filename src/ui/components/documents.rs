@@ -46,20 +46,25 @@ pub fn DocumentCard(
     #[props(default)] error: bool,
 ) -> Element {
     let statuses = status_suffix(sent, invoiced);
+    let error_suffix = if error { ", erreur" } else { "" };
     let accessible_label =
-        format!("{document_type} numéro {number}, {client}, total {total}{statuses}");
+        format!("{document_type} numéro {number}, {client}, total {total}{statuses}{error_suffix}");
+    let class = if error {
+        "document-card is-error"
+    } else {
+        "document-card"
+    };
 
     rsx! {
         button {
-            class: "document-card",
+            class,
             r#type: "button",
             aria_label: accessible_label,
             aria_busy: loading,
-            aria_invalid: error,
             disabled: disabled || loading,
             onclick: move |event| onclick.call(event),
-            div { class: "document-card__content", aria_hidden: loading,
-                div { class: "document-card__heading",
+            span { class: "document-card__content", aria_hidden: loading,
+                span { class: "document-card__heading",
                     strong { "{document_type} n° {number}" }
                     strong { class: "document-card__total", "{total}" }
                 }
@@ -82,12 +87,16 @@ pub fn DocumentCard(
     }
 }
 
-const fn status_suffix(sent: bool, invoiced: bool) -> &'static str {
+fn status_suffix(sent: bool, invoiced: bool) -> String {
     match (sent, invoiced) {
-        (true, true) => ", envoyé, facturé",
-        (true, false) => ", envoyé",
-        (false, true) => ", facturé",
-        (false, false) => "",
+        (true, true) => format!(
+            ", {}, {}",
+            BadgeKind::Sent.label(),
+            BadgeKind::Invoiced.label()
+        ),
+        (true, false) => format!(", {}", BadgeKind::Sent.label()),
+        (false, true) => format!(", {}", BadgeKind::Invoiced.label()),
+        (false, false) => String::new(),
     }
 }
 

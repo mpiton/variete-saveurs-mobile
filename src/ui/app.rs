@@ -269,7 +269,33 @@ fn AppShell() -> Element {
 
 #[component]
 fn Home() -> Element {
-    rsx! { ComponentsDemo {} }
+    rsx! {
+        div { class: "screen",
+            nav { aria_label: "Écrans principaux",
+                ul { class: "route-list",
+                    RouteItem { route: Route::Form {}, label: "Formulaire" }
+                    RouteItem { route: Route::Record {}, label: "Fiche" }
+                    RouteItem { route: Route::Preview {}, label: "Aperçu" }
+                    RouteItem { route: Route::Compose {}, label: "Composition" }
+                }
+            }
+            ComponentsDemo {}
+        }
+    }
+}
+
+#[component]
+fn RouteItem(route: Route, label: &'static str) -> Element {
+    rsx! {
+        li {
+            Link {
+                class: "route-link",
+                to: route,
+                span { "{label}" }
+                span { aria_hidden: "true", "→" }
+            }
+        }
+    }
 }
 
 #[component]

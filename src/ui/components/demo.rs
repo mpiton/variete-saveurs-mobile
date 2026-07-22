@@ -89,6 +89,7 @@ pub fn ComponentsDemo() -> Element {
             section { class: "component-demo__section", aria_labelledby: "fab-menu-title",
                 h3 { id: "fab-menu-title", "FAB menu" }
                 FabMenu {
+                    id: "document-fab-menu",
                     open: fab_open(),
                     on_toggle: move |_| fab_open.toggle(),
                     on_quote: move |_| {},
@@ -105,7 +106,7 @@ pub fn ComponentsDemo() -> Element {
                         StatusBadge { kind: BadgeKind::Sent }
                         StatusBadge { kind: BadgeKind::Invoiced }
                     }
-                    Snackbar { message: "Devis n° 10 émis" }
+                    Snackbar { message: "Devis n° 10 émis", announce: false }
                     ErrorBlock {
                         title: "Émission impossible",
                         message: "Vérifiez les champs signalés avant de réessayer.",
@@ -123,6 +124,7 @@ pub fn ComponentsDemo() -> Element {
                 }
             }
             BottomSheet {
+                id: "catalog-bottom-sheet",
                 title: "Choisir dans le catalogue",
                 open: sheet_open(),
                 on_dismiss: move |_| sheet_open.set(false),
@@ -200,7 +202,7 @@ fn FieldShowcase() -> Element {
                 for state in DEMO_STATES {
                     StateExample { label: state.label, state_class: state.class,
                         DemoField {
-                            name: state.id,
+                            id_suffix: state.id,
                             value: state.value,
                             disabled: state.disabled,
                             loading: state.loading,
@@ -215,7 +217,7 @@ fn FieldShowcase() -> Element {
 
 #[component]
 fn DemoField(
-    name: String,
+    id_suffix: String,
     value: String,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
@@ -226,7 +228,8 @@ fn DemoField(
     rsx! {
         OutlinedField {
             label: "Prix unitaire",
-            name,
+            name: "unit-price",
+            id_suffix: Some(id_suffix),
             value,
             input_type: "text",
             input_mode: "decimal",
