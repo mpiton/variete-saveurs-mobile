@@ -1,5 +1,6 @@
 package dev.dioxus.main
 
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
@@ -71,7 +72,14 @@ class MainActivity : WryActivity() {
             )
             insets
         }
-        ViewCompat.requestApplyInsets(webView)
+        webView.post { ViewCompat.requestApplyInsets(webView) }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::webView.isInitialized) {
+            webView.settings.textZoom = (newConfig.fontScale * 100).roundToInt()
+        }
     }
 
     private fun navigateBack() {

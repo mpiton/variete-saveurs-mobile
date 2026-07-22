@@ -88,3 +88,44 @@ fn light_palette_matches_the_design_and_meets_aa_contrast() {
         ) >= 4.5
     );
 }
+
+#[test]
+fn startup_background_matches_the_chrome_token() {
+    let css = project_file("assets/app.css");
+    let chrome = css_token(&css, "--color-chrome");
+    let app = project_file("src/ui/app.rs");
+    assert!(app.contains(&format!("background:{chrome}")));
+
+    let channels = [1, 3, 5].map(|start| {
+        u8::from_str_radix(&chrome[start..start + 2], 16)
+            .expect("chrome must be a six-digit hex value")
+    });
+    let activity = project_file("android/MainActivity.kt");
+    assert!(activity.contains(&format!(
+        "Color.rgb({}, {}, {})",
+        channels[0], channels[1], channels[2]
+    )));
+}
+
+#[test]
+fn android_updates_font_scale_without_recreating_the_activity() {
+    let manifest = project_file("android/AndroidManifest.xml");
+    assert!(manifest.contains("keyboardHidden|fontScale"));
+
+    let activity = project_file("android/MainActivity.kt");
+    assert!(activity.contains("override fun onConfigurationChanged"));
+    assert!(activity.contains("newConfig.fontScale"));
+}
+
+#[test]
+fn android_replays_initial_insets_after_the_webview_attaches() {
+    let activity = project_file("android/MainActivity.kt");
+    assert!(activity.contains("webView.post"));
+    assert!(activity.contains("ViewCompat.requestApplyInsets(webView)"));
+}
+
+#[test]
+fn interactive_controls_disable_double_tap_zoom() {
+    let css = project_file("assets/app.css");
+    assert!(css.contains("touch-action: manipulation;"));
+}
