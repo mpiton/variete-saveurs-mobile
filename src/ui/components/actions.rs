@@ -28,6 +28,7 @@ pub fn Button(
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
     #[props(default)] error: bool,
+    #[props(default = true)] announce_error: bool,
 ) -> Element {
     let class = format!(
         "m3-button {}{}",
@@ -53,6 +54,9 @@ pub fn Button(
                 Spinner {}
             }
         }
+        if error && announce_error {
+            ActionErrorStatus {}
+        }
     }
 }
 
@@ -65,6 +69,7 @@ pub fn Fab(
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
     #[props(default)] error: bool,
+    #[props(default = true)] announce_error: bool,
 ) -> Element {
     let class = if error { "fab is-error" } else { "fab" };
     let accessible_label = if error {
@@ -88,6 +93,9 @@ pub fn Fab(
             } else {
                 PlusIcon {}
             }
+        }
+        if error && announce_error {
+            ActionErrorStatus {}
         }
     }
 }
@@ -137,6 +145,7 @@ pub fn SegmentedButton(
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
     #[props(default)] error: bool,
+    #[props(default = true)] announce_error: bool,
 ) -> Element {
     let class = if error {
         "segmented-button is-error"
@@ -170,12 +179,24 @@ pub fn SegmentedButton(
                 Spinner {}
             }
         }
+        if error && announce_error {
+            ActionErrorStatus {}
+        }
     }
 }
 
 #[component]
 fn Spinner() -> Element {
     rsx! { span { class: "spinner", aria_hidden: "true" } }
+}
+
+#[component]
+pub(super) fn ActionErrorStatus() -> Element {
+    rsx! {
+        span { class: "visually-hidden", role: "status", aria_live: "polite",
+            "L’action a échoué."
+        }
+    }
 }
 
 #[component]

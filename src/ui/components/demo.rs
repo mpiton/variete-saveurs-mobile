@@ -162,6 +162,7 @@ fn ButtonShowcase() -> Element {
                             disabled: state.disabled,
                             loading: state.loading,
                             error: state.error,
+                            announce_error: false,
                             onclick: move |_| {},
                         }
                     }
@@ -184,6 +185,7 @@ fn FabShowcase() -> Element {
                             disabled: state.disabled,
                             loading: state.loading,
                             error: state.error,
+                            announce_error: false,
                             onclick: move |_| {},
                         }
                     }
@@ -260,6 +262,7 @@ fn DocumentShowcase() -> Element {
                             disabled: state.disabled,
                             loading: state.loading,
                             error: state.error,
+                            announce_error: false,
                             onclick: move |_| {},
                         }
                     }
@@ -284,6 +287,7 @@ fn SegmentedShowcase() -> Element {
                             disabled: state.disabled,
                             loading: state.loading,
                             error: state.error,
+                            announce_error: false,
                             on_select: move |_| {},
                         }
                     }

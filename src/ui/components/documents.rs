@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use super::actions::ActionErrorStatus;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BadgeKind {
     Sent,
@@ -44,6 +46,7 @@ pub fn DocumentCard(
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
     #[props(default)] error: bool,
+    #[props(default = true)] announce_error: bool,
 ) -> Element {
     let statuses = status_suffix(sent, invoiced);
     let error_suffix = if error { ", erreur" } else { "" };
@@ -83,6 +86,9 @@ pub fn DocumentCard(
             if loading {
                 span { class: "spinner", aria_hidden: "true" }
             }
+        }
+        if error && announce_error {
+            ActionErrorStatus {}
         }
     }
 }
