@@ -4,6 +4,16 @@ use std::sync::Mutex;
 use rusqlite::{Connection, Row, Transaction, params, types::Type};
 
 use super::models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput};
+use super::numbering::reserve_number;
+use super::validation::validate_document;
+
+#[derive(Debug, thiserror::Error)]
+pub enum IssueError {
+    #[error("{}", .0.join("\n"))]
+    Validation(Vec<String>),
+    #[error("Impossible d'émettre le document.")]
+    Database(#[from] rusqlite::Error),
+}
 
 const DOCUMENT_SELECT: &str = "
     SELECT d.id, d.kind, d.number, d.issue_date, d.event_date, d.payment_terms,
@@ -164,6 +174,32 @@ pub fn insert_document(
         ],
     )?;
     Ok(transaction.last_insert_rowid())
+}
+
+pub fn issue_document(
+    connection: &mut Connection,
+    input: DocumentInput,
+    source_quote_id: Option<i64>,
+    created_at: &str,
+) -> Result<Document, IssueError> {
+    validate_document(&input).map_err(IssueError::Validation)?;
+    let total_cents = input.total_cents();
+    let created_at = created_at.to_string();
+    let transaction = connection.transaction()?;
+    let number = reserve_number(&transaction, &input.kind)?;
+    let id = insert_document(&transaction, number, &input, source_quote_id, &created_at)?;
+    transaction.commit()?;
+
+    Ok(Document {
+        id,
+        number,
+        input,
+        total_cents,
+        source_quote_id,
+        sent_at: None,
+        created_at,
+        is_invoiced: false,
+    })
 }
 
 pub fn list_documents(
@@ -336,10 +372,11 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        get_document, insert_document, list_documents, mark_sent, migrate, open_database,
-        search_clients, seed_catalog,
+        IssueError, get_document, insert_document, issue_document, list_documents, mark_sent,
+        migrate, open_database, search_clients, seed_catalog,
     };
     use crate::domain::models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput};
+    use crate::domain::numbering::next_number;
 
     fn temp_connection() -> (tempfile::NamedTempFile, Connection) {
         let file = tempfile::NamedTempFile::new().expect("create temp db");
@@ -427,6 +464,94 @@ mod tests {
             .expect("insert document");
         transaction.commit().expect("commit document");
         id
+    }
+
+    #[test]
+    fn issue_commits_before_later_export_failure_and_preserves_draft() {
+        let (_file, mut connection) = initialized_connection();
+        let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
+        connection
+            .execute(
+                "INSERT INTO draft (id, payload_json, updated_at) VALUES (1, ?1, ?2)",
+                params!["{\"client\":\"Mairie de Lyon\"}", "2026-07-22T09:00:00Z"],
+            )
+            .expect("save draft");
+
+        let issued = issue_document(&mut connection, input.clone(), None, "2026-07-22T10:00:00Z")
+            .expect("issue document");
+        let export_result: Result<(), &str> = Err("export failed");
+
+        assert!(export_result.is_err());
+        assert_eq!(issued.number, 10);
+        assert_eq!(
+            get_document(&connection, issued.id).expect("load issued"),
+            issued
+        );
+        assert_eq!(
+            next_number(&connection, &DocumentKind::Quote).expect("read next number"),
+            11
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT payload_json FROM draft WHERE id = 1", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .expect("load draft"),
+            "{\"client\":\"Mairie de Lyon\"}"
+        );
+
+        let next = issue_document(&mut connection, input, None, "2026-07-22T11:00:00Z")
+            .expect("issue next document");
+        assert_eq!(next.number, 11);
+    }
+
+    #[test]
+    fn issue_rejects_invalid_input_without_consuming_a_number() {
+        let (_file, mut connection) = initialized_connection();
+        let mut input = document_input(DocumentKind::Quote, " ");
+        input.issue_date = " ".to_string();
+
+        let error = issue_document(&mut connection, input, None, "2026-07-22T10:00:00Z")
+            .expect_err("reject invalid document");
+
+        let IssueError::Validation(errors) = error else {
+            panic!("expected validation errors");
+        };
+        assert!(errors.contains(&"La date d'émission est obligatoire.".to_string()));
+        assert!(errors.contains(&"Le nom du client est obligatoire.".to_string()));
+        assert_eq!(
+            next_number(&connection, &DocumentKind::Quote).expect("read next number"),
+            10
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM documents", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("count documents"),
+            0
+        );
+    }
+
+    #[test]
+    fn issue_rolls_back_reservation_when_insert_fails_before_commit() {
+        let (_file, mut connection) = initialized_connection();
+        let input = document_input(DocumentKind::Invoice, "Mairie de Lyon");
+
+        let error = issue_document(&mut connection, input, Some(999), "2026-07-22T10:00:00Z")
+            .expect_err("reject missing source quote");
+
+        assert!(matches!(error, IssueError::Database(_)));
+        assert_eq!(
+            next_number(&connection, &DocumentKind::Invoice).expect("read next number"),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM documents", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("count documents"),
+            0
+        );
     }
 
     #[test]
