@@ -55,7 +55,7 @@ pub fn Button(
             }
         }
         if error && announce_error {
-            ActionErrorStatus {}
+            ActionErrorStatus { message: "L’action a échoué." }
         }
     }
 }
@@ -95,7 +95,7 @@ pub fn Fab(
             }
         }
         if error && announce_error {
-            ActionErrorStatus {}
+            ActionErrorStatus { message: "L’action a échoué." }
         }
     }
 }
@@ -180,7 +180,7 @@ pub fn SegmentedButton(
             }
         }
         if error && announce_error {
-            ActionErrorStatus {}
+            ActionErrorStatus { message: "L’action a échoué." }
         }
     }
 }
@@ -191,10 +191,10 @@ fn Spinner() -> Element {
 }
 
 #[component]
-pub(super) fn ActionErrorStatus() -> Element {
+pub(super) fn ActionErrorStatus(message: String) -> Element {
     rsx! {
         span { class: "visually-hidden", role: "status", aria_live: "polite",
-            "L’action a échoué."
+            "{message}"
         }
     }
 }

@@ -52,6 +52,8 @@ pub fn DocumentCard(
     let error_suffix = if error { ", erreur" } else { "" };
     let accessible_label =
         format!("{document_type} numéro {number}, {client}, total {total}{statuses}{error_suffix}");
+    let error_announcement =
+        format!("Échec pour {document_type} numéro {number}, client {client}.");
     let class = if error {
         "document-card is-error"
     } else {
@@ -88,7 +90,7 @@ pub fn DocumentCard(
             }
         }
         if error && announce_error {
-            ActionErrorStatus {}
+            ActionErrorStatus { message: error_announcement }
         }
     }
 }
