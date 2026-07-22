@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 chrono = { version = "0.4.45", features = ["serde"] }
-dioxus = { version = "0.7.9", features = ["mobile"] }
+dioxus = { version = "0.7.9", features = ["mobile", "router"] }
 html-escape = "0.2.14"
 rusqlite = { version = "0.40.1", default-features = false, features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
