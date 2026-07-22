@@ -198,13 +198,11 @@ fn prune_published_generations(exports: &Path, current: &Path) {
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
-            let is_generation = entry.file_type().ok()?.is_dir()
-                && entry.file_name().to_str()?.starts_with("reference-");
-            let modified = entry
-                .metadata()
-                .and_then(|metadata| metadata.modified())
-                .unwrap_or(UNIX_EPOCH);
-            (is_generation && path != current).then_some((modified, path))
+            if !entry.file_type().ok()?.is_dir() || path == current {
+                return None;
+            }
+            let order = generation_order(entry.file_name().to_str()?)?;
+            Some((order, path))
         })
         .collect::<Vec<_>>();
     previous.sort();
@@ -217,6 +215,25 @@ fn prune_published_generations(exports: &Path, current: &Path) {
                 path.display()
             );
         }
+    }
+}
+
+fn generation_order(name: &str) -> Option<(u128, u64)> {
+    let mut parts = name.strip_prefix("reference-")?.split('-');
+    let first = parts.next()?;
+    let second = parts.next()?;
+    match (parts.next(), parts.next()) {
+        // Current format: timestamp-pid-sequence.
+        (Some(sequence), None) => {
+            second.parse::<u32>().ok()?;
+            Some((first.parse().ok()?, sequence.parse().ok()?))
+        }
+        // Compatibility with the earlier pid-timestamp format.
+        (None, None) => {
+            first.parse::<u32>().ok()?;
+            Some((second.parse().ok()?, 0))
+        }
+        _ => None,
     }
 }
 
@@ -505,8 +522,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        MAX_PUBLISHED_GENERATIONS, compile_reference_pdf, generation_timestamp, publish_generation,
-        reference_document,
+        MAX_PUBLISHED_GENERATIONS, compile_reference_pdf, generation_order, generation_timestamp,
+        publish_generation, reference_document,
     };
 
     #[test]
@@ -609,5 +626,17 @@ mod tests {
                 .exists()
         );
         fs::remove_dir_all(exports).expect("test export directory should be removed");
+    }
+
+    #[test]
+    fn derives_retention_order_from_current_and_legacy_names() {
+        assert_eq!(
+            generation_order(
+                "reference-000000000000000000000000000000000000123-42-00000000000000000007"
+            ),
+            Some((123, 7))
+        );
+        assert_eq!(generation_order("reference-42-122"), Some((122, 0)));
+        assert_eq!(generation_order("reference-unrelated"), None);
     }
 }

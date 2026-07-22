@@ -129,8 +129,8 @@ un succès du spike.
 
 Mesure reproductible sur APK `x86_64` release propre, avec suppression des
 symboles appliquée aux deux builds : baseline `origin/main` (`d887c63`) de
-`12 871 861` octets, candidat corrigé de `38 356 969` octets, soit un delta de
-`25 485 108` octets (`24,304 MiB`, avec 1 MiB = 1 048 576 octets) et `0,696 MiB`
+`12 871 861` octets, candidat corrigé de `38 358 085` octets, soit un delta de
+`25 486 224` octets (`24,306 MiB`, avec 1 MiB = 1 048 576 octets) et `0,694 MiB`
 de marge. **Gate APK : réussi.** L'ancien delta de `26,885 MiB`, calculé avec un
 artefact baseline non comparable, est remplacé par cette mesure même profil.
 
