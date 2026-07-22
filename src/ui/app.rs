@@ -15,6 +15,8 @@ use rusqlite::Connection;
 
 use crate::{domain::db::open_database, platform::paths::database_path};
 
+use super::components::ComponentsDemo;
+
 const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str =
     "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}";
@@ -267,36 +269,7 @@ fn AppShell() -> Element {
 
 #[component]
 fn Home() -> Element {
-    rsx! {
-        section { class: "screen", aria_labelledby: "home-title",
-            div { class: "placeholder-panel",
-                h2 { id: "home-title", "Bienvenue au Comptoir" }
-                p { "Le socle de navigation est prêt. Les écrans métier arrivent dans les prochaines tâches." }
-            }
-            nav { aria_label: "Écrans principaux",
-                ul { class: "route-list",
-                    RouteItem { route: Route::Form {}, label: "Formulaire" }
-                    RouteItem { route: Route::Record {}, label: "Fiche" }
-                    RouteItem { route: Route::Preview {}, label: "Aperçu" }
-                    RouteItem { route: Route::Compose {}, label: "Composition" }
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn RouteItem(route: Route, label: &'static str) -> Element {
-    rsx! {
-        li {
-            Link {
-                class: "route-link",
-                to: route,
-                span { "{label}" }
-                span { aria_hidden: "true", "→" }
-            }
-        }
-    }
+    rsx! { ComponentsDemo {} }
 }
 
 #[component]
