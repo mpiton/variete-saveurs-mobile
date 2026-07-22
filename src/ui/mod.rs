@@ -2,5 +2,6 @@
 //! lives in `domain`.
 
 mod app;
+mod components;
 
 pub use app::app;

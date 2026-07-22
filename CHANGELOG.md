@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reusable Material 3 buttons, FAB menu, outlined fields, document cards,
+  status badges, segmented controls, bottom sheet, snackbar, error and empty states.
 - Light mobile UI foundation with design tokens, teal Material app chrome,
   typed stack navigation and system back, and edge-to-edge Android insets.
 - Singleton JSON draft persistence with restore, replacement, corruption tolerance,

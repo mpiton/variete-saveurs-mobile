@@ -87,6 +87,13 @@ fn light_palette_matches_the_design_and_meets_aa_contrast() {
             css_token(&css, "--color-chrome")
         ) >= 4.5
     );
+    assert!(
+        contrast_ratio(
+            css_token(&css, "--color-muted"),
+            css_token(&css, "--color-surface")
+        ) >= 4.5,
+        "outlined-field placeholder must meet WCAG AA"
+    );
 }
 
 #[test]
