@@ -5,5 +5,6 @@
 pub mod db;
 pub mod models;
 pub mod money;
+pub mod numbering;
 pub mod render;
 pub mod validation;

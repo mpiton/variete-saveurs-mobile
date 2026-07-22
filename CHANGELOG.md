@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Transactional quote and invoice number reservations with rollback before commit.
 - Complete idempotent SQLite schema, shared connection, app-private database
   path, and desktop-compatible counters and catalog seeds.
 - Experimental offline Typst PDF export with embedded fonts and Android-private
