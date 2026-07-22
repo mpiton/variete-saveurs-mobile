@@ -13,6 +13,14 @@ pub fn exports_dir() -> Result<PathBuf, PathError> {
     Ok(app_files_dir()?.join("exports"))
 }
 
+#[expect(
+    dead_code,
+    reason = "database initialization lands before app state in this sprint"
+)]
+pub fn database_path() -> Result<PathBuf, PathError> {
+    Ok(app_files_dir()?.join("devis-factures.sqlite3"))
+}
+
 #[cfg(target_os = "android")]
 fn app_files_dir() -> Result<PathBuf, PathError> {
     use jni::JavaVM;

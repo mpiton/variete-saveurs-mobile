@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Complete idempotent SQLite schema, shared connection, app-private database
+  path, and desktop-compatible counters and catalog seeds.
 - Experimental offline Typst PDF export with embedded fonts and Android-private
   output for the task 05 fidelity spike.
 - Desktop-faithful quote and invoice HTML rendering with embedded template and
