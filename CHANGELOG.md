@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Issued-document persistence queries for transactional inserts, filtered recent
+  lists with derived statuses, detail loading, first-send tracking, and client
+  autocomplete.
 - Transactional quote and invoice number reservations with rollback before commit.
 - Complete idempotent SQLite schema, shared connection, app-private database
   path, and desktop-compatible counters and catalog seeds.
