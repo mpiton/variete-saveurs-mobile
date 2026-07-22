@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Singleton JSON draft persistence with restore, replacement, corruption tolerance,
+  and explicit clearing.
 - Transactional document issuance with validation before number reservation,
   atomic persistence, and post-commit export decoupling.
 - Issued-document persistence queries for transactional inserts, filtered recent

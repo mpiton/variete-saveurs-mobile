@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use rusqlite::{Connection, Row, Transaction, params, types::Type};
+use rusqlite::{Connection, OptionalExtension, Row, Transaction, params, types::Type};
 
 use super::models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput};
 use super::numbering::reserve_number;
@@ -134,6 +134,46 @@ pub fn seed_catalog(connection: &Connection) -> rusqlite::Result<()> {
         )?;
     }
     transaction.commit()
+}
+
+pub fn save_draft(
+    connection: &Connection,
+    payload: &DocumentInput,
+    updated_at: &str,
+) -> rusqlite::Result<()> {
+    let payload_json = serde_json::to_string(payload)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    connection.execute(
+        "INSERT INTO draft (id, payload_json, updated_at) VALUES (1, ?1, ?2)
+         ON CONFLICT(id) DO UPDATE SET
+             payload_json = excluded.payload_json,
+             updated_at = excluded.updated_at",
+        params![payload_json, updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn load_draft(connection: &Connection) -> rusqlite::Result<Option<DocumentInput>> {
+    let Some(payload_json) = connection
+        .query_row("SELECT payload_json FROM draft WHERE id = 1", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    match serde_json::from_str(&payload_json) {
+        Ok(payload) => Ok(Some(payload)),
+        Err(_) => {
+            eprintln!("Ignoring unreadable draft payload");
+            Ok(None)
+        }
+    }
+}
+
+pub fn clear_draft(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute("DELETE FROM draft WHERE id = 1", [])?;
+    Ok(())
 }
 
 pub fn insert_document(
@@ -372,8 +412,8 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        IssueError, get_document, insert_document, issue_document, list_documents, mark_sent,
-        migrate, open_database, search_clients, seed_catalog,
+        IssueError, clear_draft, get_document, insert_document, issue_document, list_documents,
+        load_draft, mark_sent, migrate, open_database, save_draft, search_clients, seed_catalog,
     };
     use crate::domain::models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput};
     use crate::domain::numbering::next_number;
@@ -467,15 +507,58 @@ mod tests {
     }
 
     #[test]
-    fn issue_commits_before_later_export_failure_and_preserves_draft() {
-        let (_file, mut connection) = initialized_connection();
+    fn draft_roundtrips_complete_document_input() {
+        let (_file, connection) = initialized_connection();
         let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
+        save_draft(&connection, &input, "2026-07-22T10:00:00Z").expect("save draft");
+        assert_eq!(load_draft(&connection).expect("load draft"), Some(input));
+    }
+
+    #[test]
+    fn saving_draft_twice_replaces_the_single_row() {
+        let (_file, connection) = initialized_connection();
+        let first = document_input(DocumentKind::Quote, "Premier client");
+        let second = document_input(DocumentKind::Invoice, "Dernier client");
+        save_draft(&connection, &first, "2026-07-22T10:00:00Z").expect("save first draft");
+        save_draft(&connection, &second, "2026-07-22T10:01:00Z").expect("save second draft");
+        assert_eq!(load_draft(&connection).expect("load draft"), Some(second));
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM draft", [], |row| row.get::<_, i64>(0))
+                .expect("count drafts"),
+            1
+        );
+    }
+
+    #[test]
+    fn unreadable_draft_is_ignored() {
+        let (_file, connection) = initialized_connection();
         connection
             .execute(
                 "INSERT INTO draft (id, payload_json, updated_at) VALUES (1, ?1, ?2)",
-                params!["{\"client\":\"Mairie de Lyon\"}", "2026-07-22T09:00:00Z"],
+                params!["{not json", "2026-07-22T10:00:00Z"],
             )
-            .expect("save draft");
+            .expect("insert unreadable draft");
+        assert_eq!(
+            load_draft(&connection).expect("ignore unreadable draft"),
+            None
+        );
+    }
+
+    #[test]
+    fn clearing_draft_removes_it() {
+        let (_file, connection) = initialized_connection();
+        let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
+        save_draft(&connection, &input, "2026-07-22T10:00:00Z").expect("save draft");
+        clear_draft(&connection).expect("clear draft");
+        assert_eq!(load_draft(&connection).expect("load cleared draft"), None);
+    }
+
+    #[test]
+    fn issue_commits_before_later_export_failure_and_preserves_draft() {
+        let (_file, mut connection) = initialized_connection();
+        let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
+        save_draft(&connection, &input, "2026-07-22T09:00:00Z").expect("save draft");
 
         let issued = issue_document(&mut connection, input.clone(), None, "2026-07-22T10:00:00Z")
             .expect("issue document");
@@ -492,12 +575,8 @@ mod tests {
             11
         );
         assert_eq!(
-            connection
-                .query_row("SELECT payload_json FROM draft WHERE id = 1", [], |row| {
-                    row.get::<_, String>(0)
-                })
-                .expect("load draft"),
-            "{\"client\":\"Mairie de Lyon\"}"
+            load_draft(&connection).expect("load draft"),
+            Some(input.clone())
         );
 
         let next = issue_document(&mut connection, input, None, "2026-07-22T11:00:00Z")
