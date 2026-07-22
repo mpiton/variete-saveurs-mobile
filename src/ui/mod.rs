@@ -3,5 +3,6 @@
 
 mod app;
 mod components;
+mod home;
 
 pub use app::app;
