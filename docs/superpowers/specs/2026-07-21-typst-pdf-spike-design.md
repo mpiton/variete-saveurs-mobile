@@ -53,9 +53,12 @@ DocumentInput
 └── template Typst embarqué ─→ compilateur Typst Android ─────────────→ candidate.pdf
 ```
 
-Le spike écrit `reference.html` et `candidate.pdf` dans le répertoire privé
-`exports/`. Les deux fichiers sont extraits avec `adb` ; Chromium produit ensuite
-le PDF desktop depuis le HTML exact généré par le mobile.
+Le spike prépare `reference.html` et `candidate.pdf` dans un répertoire de
+génération temporaire, puis publie la paire par renommage du répertoire vers
+`exports/reference-<génération>/`. Une erreur supprime la génération temporaire,
+donc un nouveau HTML ne peut pas être associé à un ancien PDF. Les deux fichiers
+sont extraits avec `adb` ; Chromium produit ensuite le PDF desktop depuis le HTML
+exact généré par le mobile.
 
 Le document de référence contient :
 
@@ -81,7 +84,7 @@ Le prototype :
 - compile un template et ses données entièrement embarqués, sans import Typst
   distant ;
 - effectue le travail hors du thread UI ;
-- écrit d'abord un fichier temporaire puis le renomme après succès ;
+- publie les deux artefacts ensemble après leur écriture complète ;
 - renvoie un `Result`, sans `unwrap()` ou `expect()` sur le chemin utilisateur ;
 - conserve les détails techniques en anglais pour les logs et présente un
   message français à l'utilisatrice.
@@ -113,6 +116,10 @@ Le prototype :
 Un temps supérieur à 5 secondes sur le téléphone ou une augmentation d'APK
 supérieure à 25 Mio déclenche une décision explicite ; ce n'est pas masqué comme
 un succès du spike.
+
+Mesure après suppression des symboles release, appliquée aux deux builds :
+baseline `12 871 861` octets, candidat `38 347 713` octets, soit un delta de
+`25 475 852` octets (`24,296 Mio`) et `0,704 Mio` de marge sous le seuil.
 
 ## Critères de décision
 

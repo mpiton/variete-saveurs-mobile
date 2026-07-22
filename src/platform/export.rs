@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use chrono::NaiveDate;
 use serde::Serialize;
@@ -29,6 +30,7 @@ const FONT_DATA: [&[u8]; 6] = [
     include_bytes!("../../assets/fonts/LiberationSans-Italic.ttf"),
 ];
 const REFERENCE_NUMBER: i64 = 9;
+static EXPORT_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug)]
 pub struct ReferenceExport {
@@ -46,8 +48,12 @@ pub enum ExportError {
     Data(#[source] serde_json::Error),
     #[error("Impossible de générer le document PDF.")]
     Typst(#[source] TypstFailure),
-    #[error("Impossible d'écrire le document PDF dans le stockage privé.")]
-    Write(#[source] std::io::Error),
+    #[error("Impossible d'écrire le fichier {path} dans le stockage privé.")]
+    Write {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -55,17 +61,15 @@ pub enum ExportError {
 pub struct TypstFailure(String);
 
 pub fn generate_reference_export() -> Result<ReferenceExport, ExportError> {
+    // ponytail: one debug export at a time; revisit only if production needs parallel jobs.
+    let _guard = EXPORT_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let started = Instant::now();
     let input = reference_document();
     let pdf = compile_reference_pdf(&input)?;
     let html = render_document_html(&input, REFERENCE_NUMBER);
     let exports = paths::exports_dir()?;
-    fs::create_dir_all(&exports).map_err(ExportError::Write)?;
-
-    let html_path = exports.join("reference.html");
-    let pdf_path = exports.join("candidate.pdf");
-    write_atomically(&html_path, html.as_bytes())?;
-    write_atomically(&pdf_path, &pdf.bytes)?;
+    fs::create_dir_all(&exports).map_err(|source| storage_error(&exports, source))?;
+    let (html_path, pdf_path) = publish_generation(&exports, html.as_bytes(), &pdf.bytes)?;
 
     Ok(ReferenceExport {
         pdf_path,
@@ -100,14 +104,55 @@ fn compile_reference_pdf(input: &DocumentInput) -> Result<CompiledPdf, ExportErr
     Ok(CompiledPdf { bytes, pages })
 }
 
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), ExportError> {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("tmp");
-    let temporary = path.with_extension(format!("{extension}.tmp"));
-    fs::write(&temporary, bytes).map_err(ExportError::Write)?;
-    fs::rename(temporary, path).map_err(ExportError::Write)
+fn publish_generation(
+    exports: &Path,
+    html: &[u8],
+    pdf: &[u8],
+) -> Result<(PathBuf, PathBuf), ExportError> {
+    let name = format!(
+        "reference-{}-{}",
+        std::process::id(),
+        generation_timestamp()
+    );
+    let staging = exports.join(format!(".{name}.tmp"));
+    let published = exports.join(name);
+    fs::create_dir(&staging).map_err(|source| storage_error(&staging, source))?;
+
+    let result = (|| {
+        write_file(&staging.join("reference.html"), html)?;
+        write_file(&staging.join("candidate.pdf"), pdf)?;
+        fs::rename(&staging, &published).map_err(|source| storage_error(&published, source))
+    })();
+
+    if let Err(error) = result {
+        if let Err(cleanup_error) = fs::remove_dir_all(&staging) {
+            eprintln!("Export staging cleanup failed: {cleanup_error}");
+        }
+        return Err(error);
+    }
+
+    Ok((
+        published.join("reference.html"),
+        published.join("candidate.pdf"),
+    ))
+}
+
+fn generation_timestamp() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos()
+}
+
+fn write_file(path: &Path, bytes: &[u8]) -> Result<(), ExportError> {
+    fs::write(path, bytes).map_err(|source| storage_error(path, source))
+}
+
+fn storage_error(path: &Path, source: std::io::Error) -> ExportError {
+    ExportError::Write {
+        path: path.display().to_string(),
+        source,
+    }
 }
 
 fn diagnostics(stage: &str, errors: &[SourceDiagnostic], world: &EmbeddedWorld) -> TypstFailure {
@@ -374,7 +419,11 @@ fn reference_document() -> DocumentInput {
 
 #[cfg(test)]
 mod tests {
-    use super::{compile_reference_pdf, reference_document};
+    use std::fs;
+
+    use super::{
+        compile_reference_pdf, generation_timestamp, publish_generation, reference_document,
+    };
 
     #[test]
     fn compiles_reference_document_to_multi_page_pdf() {
@@ -384,5 +433,40 @@ mod tests {
 
         assert!(pdf.bytes.starts_with(b"%PDF-"));
         assert!(pdf.pages > 1, "expected multiple pages, got {}", pdf.pages);
+    }
+
+    #[test]
+    fn paginates_a_group_larger_than_one_page() {
+        let mut input = reference_document();
+        input.lines.extend(input.lines.clone());
+        for line in &mut input.lines {
+            line.group = Some("Groupe long".to_string());
+        }
+
+        let pdf = compile_reference_pdf(&input).expect("long group should compile");
+
+        assert!(
+            pdf.pages > 2,
+            "expected at least 3 pages, got {}",
+            pdf.pages
+        );
+    }
+
+    #[test]
+    fn publishes_artifacts_in_the_same_generation() {
+        let exports = std::env::temp_dir().join(format!(
+            "devis-mobile-export-test-{}-{}",
+            std::process::id(),
+            generation_timestamp()
+        ));
+        fs::create_dir(&exports).expect("test export directory should be created");
+
+        let (html, pdf) = publish_generation(&exports, b"html", b"pdf")
+            .expect("artifacts should be published together");
+
+        assert_eq!(html.parent(), pdf.parent());
+        assert_eq!(fs::read(html).expect("HTML should exist"), b"html");
+        assert_eq!(fs::read(pdf).expect("PDF should exist"), b"pdf");
+        fs::remove_dir_all(exports).expect("test export directory should be removed");
     }
 }

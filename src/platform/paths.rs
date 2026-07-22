@@ -15,30 +15,29 @@ pub fn exports_dir() -> Result<PathBuf, PathError> {
 
 #[cfg(target_os = "android")]
 fn app_files_dir() -> Result<PathBuf, PathError> {
-    use manganis::jni::objects::JString;
+    use jni::JavaVM;
+    use jni::objects::{JObject, JString};
 
-    manganis::android::with_activity(|env, activity| {
-        let path = env
-            .call_method(activity, "getFilesDir", "()Ljava/io/File;", &[])
-            .and_then(|value| value.l())
-            .and_then(|directory| {
-                env.call_method(directory, "getAbsolutePath", "()Ljava/lang/String;", &[])
-            })
-            .and_then(|value| value.l())
-            .and_then(|value| {
-                let value = JString::from(value);
-                env.get_string(&value).map(String::from)
-            });
+    let path = (|| -> jni::errors::Result<PathBuf> {
+        let android = ndk_context::android_context();
+        let vm = unsafe { JavaVM::from_raw(android.vm().cast()) }?;
+        let mut env = vm.attach_current_thread()?;
+        let raw_context = unsafe { JObject::from_raw(android.context().cast()) };
+        let context = env.new_global_ref(&raw_context)?;
+        let directory = env
+            .call_method(context.as_obj(), "getFilesDir", "()Ljava/io/File;", &[])?
+            .l()?;
+        let value = env
+            .call_method(directory, "getAbsolutePath", "()Ljava/lang/String;", &[])?
+            .l()?;
+        let value = JString::from(value);
+        Ok(PathBuf::from(String::from(env.get_string(&value)?)))
+    })();
 
-        match path {
-            Ok(path) => Some(PathBuf::from(path)),
-            Err(error) => {
-                eprintln!("Android filesDir lookup failed: {error}");
-                None
-            }
-        }
+    path.map_err(|error| {
+        eprintln!("Android filesDir lookup failed: {error}");
+        PathError::PrivateStorage
     })
-    .ok_or(PathError::PrivateStorage)
 }
 
 #[cfg(not(target_os = "android"))]

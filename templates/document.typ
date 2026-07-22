@@ -135,7 +135,8 @@
   stroke: none,
   table.header(table.cell(inset: 0pt, stroke: none, detail-header)),
   ..data.groups.map(group => table.cell(
-    breakable: false,
+    // ponytail: 12 rows fit a page; split larger groups until Typst supports avoid-with-fallback.
+    breakable: group.lines.len() > 12,
     inset: 0pt,
     stroke: none,
     group-table(group),

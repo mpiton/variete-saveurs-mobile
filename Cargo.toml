@@ -15,8 +15,12 @@ typst = "0.15.1"
 typst-pdf = "0.15.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
-manganis = "0.7.9"
+jni = "0.21.1"
+ndk-context = "0.1.1"
 
 [patch.crates-io]
 # Upstream security fix for RUSTSEC-2026-0194/0195, pending a Citationberg release.
 citationberg = { git = "https://github.com/typst/citationberg", rev = "06a591e2f237d25e1dfdedac3f3d1494c496c52d" }
+
+[profile.release]
+strip = "symbols"
