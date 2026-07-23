@@ -18,7 +18,7 @@ use crate::domain::{
 };
 
 use super::{
-    app::{DatabaseContext, Route},
+    app::{DatabaseContext, OutsideInteraction, Route},
     components::{
         Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
         OutlinedField, SegmentedButton, line_from_catalog_item,
@@ -26,6 +26,7 @@ use super::{
 };
 
 const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(500);
+const SUGGESTION_DEBOUNCE: Duration = Duration::from_millis(200);
 
 #[component]
 pub(super) fn Form() -> Element {
@@ -34,7 +35,6 @@ pub(super) fn Form() -> Element {
     let initial_database = database.clone();
     let catalog_database = database.clone();
     let suggestions_database = database.clone();
-    let focus_database = database.clone();
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
@@ -42,6 +42,9 @@ pub(super) fn Form() -> Element {
     let mut catalog_picker = use_signal(|| None::<Vec<CatalogItem>>);
     let picker_error = use_signal(|| None::<String>);
     let mut client_suggestions = use_signal(Vec::<ClientInput>::new);
+    // Pending autocomplete lookup: `Some(name)` asks for a debounced search,
+    // `None` keeps the list dismissed (outside tap, scroll gesture, pick).
+    let mut suggestion_search = use_signal(|| None::<String>);
 
     // Debounced auto-save: every edit bumps `edit_generation`; the save only
     // runs once the generation has been stable for AUTOSAVE_DEBOUNCE.
@@ -63,6 +66,36 @@ pub(super) fn Form() -> Element {
                 Err(error) => save_error.set(Some(error)),
             }
         });
+    });
+
+    // Debounced client lookup: the SQLite query stays out of the input event
+    // path and runs at most once per typing pause; a lookup is dropped as
+    // soon as a newer keystroke or a dismissal supersedes it.
+    use_effect(move || {
+        let Some(name) = suggestion_search() else {
+            return;
+        };
+        let database = suggestions_database.clone();
+        spawn(async move {
+            sleep(SUGGESTION_DEBOUNCE).await;
+            if suggestion_search.peek().as_deref() != Some(name.as_str()) {
+                return;
+            }
+            let matches = match suggestion_query(&name) {
+                Some(query) => load_client_suggestions(&database, query),
+                None => Vec::new(),
+            };
+            client_suggestions.set(matches);
+        });
+    });
+
+    // The shell bumps this on any tap or scroll gesture that bubbles up to
+    // it (top bar and scroll gutter included); the autocomplete wrapper
+    // stops its own taps from reaching the shell.
+    let outside_interaction = use_context::<OutsideInteraction>().0;
+    use_effect(move || {
+        let _ = outside_interaction();
+        close_client_suggestions(client_suggestions, suggestion_search);
     });
 
     let Some(current) = draft.read().clone() else {
@@ -98,16 +131,6 @@ pub(super) fn Form() -> Element {
 
     rsx! {
         section { class: "screen form-screen", aria_labelledby: "form-draft-title",
-            // The suggestion list closes on any tap outside the client name
-            // field (which stops propagation) and on scroll gestures. The
-            // real scroller is an ancestor (`main.screen-scroll` in the app
-            // shell) and `scroll` does not bubble, so a local `onscroll`
-            // would never fire — `touchmove`/`wheel` do bubble and cover the
-            // Android gesture and the desktop dev loop. The list flows
-            // inside the scroll view, so it never overlays the keyboard.
-            onclick: move |_| close_client_suggestions(client_suggestions),
-            ontouchmove: move |_| close_client_suggestions(client_suggestions),
-            onwheel: move |_| close_client_suggestions(client_suggestions),
             h2 { id: "form-draft-title", "{draft_title}" }
 
             section { class: "form-section", aria_labelledby: "form-client-title",
@@ -122,6 +145,9 @@ pub(super) fn Form() -> Element {
                         });
                     },
                 }
+                // The suggestion list flows inside the scroll view, so it
+                // never overlays the keyboard; the wrapper keeps its own
+                // taps from counting as "outside" for the shell broadcast.
                 div {
                     class: "client-autocomplete",
                     onclick: move |event| event.stop_propagation(),
@@ -134,11 +160,7 @@ pub(super) fn Form() -> Element {
                             apply_edit(draft, edit_generation, |draft| {
                                 draft.client.name = value.clone();
                             });
-                            refresh_client_suggestions(
-                                &suggestions_database,
-                                client_suggestions,
-                                &value,
-                            );
+                            suggestion_search.set(Some(value));
                         },
                         onfocus: move |_| {
                             let name = draft
@@ -146,11 +168,7 @@ pub(super) fn Form() -> Element {
                                 .as_ref()
                                 .map(|draft| draft.client.name.clone())
                                 .unwrap_or_default();
-                            refresh_client_suggestions(
-                                &focus_database,
-                                client_suggestions,
-                                &name,
-                            );
+                            suggestion_search.set(Some(name));
                         },
                     }
                     if !suggestions.is_empty() {
@@ -171,7 +189,10 @@ pub(super) fn Form() -> Element {
                                                 apply_edit(draft, edit_generation, |draft| {
                                                     fill_client_from_suggestion(draft, &client);
                                                 });
-                                                client_suggestions.set(Vec::new());
+                                                close_client_suggestions(
+                                                    client_suggestions,
+                                                    suggestion_search,
+                                                );
                                             }
                                         },
                                         span { class: "client-suggestion__name", "{client.name}" }
@@ -401,18 +422,6 @@ fn suggestion_query(name_value: &str) -> Option<&str> {
     (trimmed.chars().count() >= 2).then_some(trimmed)
 }
 
-fn refresh_client_suggestions(
-    database: &DatabaseContext,
-    mut suggestions: Signal<Vec<ClientInput>>,
-    name_value: &str,
-) {
-    let matches = match suggestion_query(name_value) {
-        Some(query) => load_client_suggestions(database, query),
-        None => Vec::new(),
-    };
-    suggestions.set(matches);
-}
-
 /// Read-only assist on the issued documents history (task 08 query): a
 /// failing lookup only means no suggestions, never a broken form.
 fn load_client_suggestions(database: &DatabaseContext, query: &str) -> Vec<ClientInput> {
@@ -436,8 +445,16 @@ fn fill_client_from_suggestion(draft: &mut DocumentInput, suggestion: &ClientInp
     draft.client = suggestion.clone();
 }
 
-fn close_client_suggestions(mut suggestions: Signal<Vec<ClientInput>>) {
-    if !suggestions.read().is_empty() {
+/// Dismisses the list: clearing the pending lookup also aborts any
+/// debounced search still in flight, so a dismissed list never reopens.
+fn close_client_suggestions(
+    mut suggestions: Signal<Vec<ClientInput>>,
+    mut search: Signal<Option<String>>,
+) {
+    if search.peek().is_some() {
+        search.set(None);
+    }
+    if !suggestions.peek().is_empty() {
         suggestions.set(Vec::new());
     }
 }
