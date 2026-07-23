@@ -249,7 +249,7 @@ fn request_new_draft(
     database: &DatabaseContext,
     has_draft: bool,
     kind: DocumentKind,
-    navigator: dioxus::router::Navigator,
+    navigator: dioxus_router::Navigator,
     mut pending_kind: Signal<Option<DocumentKind>>,
     mut action_error: Signal<Option<String>>,
 ) {
