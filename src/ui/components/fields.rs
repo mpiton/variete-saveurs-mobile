@@ -47,10 +47,6 @@ pub fn OutlinedField(
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used when task 14 mounts the outlined field")
-)]
 fn field_id(name: &str, suffix: Option<&str>) -> String {
     match suffix {
         Some(suffix) => format!("field-{name}-{suffix}"),

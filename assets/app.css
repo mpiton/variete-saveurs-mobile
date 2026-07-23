@@ -589,6 +589,42 @@ input[aria-busy="true"]:disabled {
     font-weight: 700;
 }
 
+.form-screen {
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.form-section {
+    display: grid;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+}
+
+.form-action-bar {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    gap: var(--touch-gap);
+    margin-top: auto;
+    margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
+    margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
+    padding:
+        var(--space-sm)
+        max(var(--space-gutter), var(--system-inset-right))
+        calc(var(--space-sm) + var(--system-inset-bottom))
+        max(var(--space-gutter), var(--system-inset-left));
+    background: var(--color-chrome);
+}
+
+.form-action-bar .m3-button:last-child {
+    flex: 1;
+}
+
 .document-card {
     position: relative;
     display: block;

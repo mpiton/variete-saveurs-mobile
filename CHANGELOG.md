@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Draft form screen with stacked client, dates, and payment-terms sections,
+  kind-aware labels, debounced auto-save to the draft store, and a sticky
+  chrome action bar (Preview wired, Issue pending the task 20 flow).
 - Home screen with filtered recent documents, issued-status badges, draft
   resumption, and confirmed draft replacement.
 - Reusable Material 3 buttons, FAB menu, outlined fields, document cards,
