@@ -11,8 +11,8 @@ use dioxus::prelude::*;
 use tokio::time::sleep;
 
 use crate::domain::{
-    db::{list_active_catalog_items, load_draft, save_draft},
-    models::{CatalogItem, ClientKind, DocumentInput, DocumentKind, LineInput},
+    db::{list_active_catalog_items, load_draft, save_draft, search_clients},
+    models::{CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
     money::{format_eur, parse_eur_to_cents},
     validation::{MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
 };
@@ -33,12 +33,15 @@ pub(super) fn Form() -> Element {
     let navigator = use_navigator();
     let initial_database = database.clone();
     let catalog_database = database.clone();
+    let suggestions_database = database.clone();
+    let focus_database = database.clone();
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
     let line_editor = use_signal(|| None::<LineEditorState>);
     let mut catalog_picker = use_signal(|| None::<Vec<CatalogItem>>);
     let picker_error = use_signal(|| None::<String>);
+    let mut client_suggestions = use_signal(Vec::<ClientInput>::new);
 
     // Debounced auto-save: every edit bumps `edit_generation`; the save only
     // runs once the generation has been stable for AUTOSAVE_DEBOUNCE.
@@ -85,6 +88,7 @@ pub(super) fn Form() -> Element {
     let is_professional = current.client.kind == ClientKind::Professional;
     let save_error_message = save_error();
     let picker_error_message = picker_error();
+    let suggestions = client_suggestions();
     let line_count = current.lines.len();
     let (can_move_up, can_move_down) = line_editor
         .read()
@@ -94,6 +98,16 @@ pub(super) fn Form() -> Element {
 
     rsx! {
         section { class: "screen form-screen", aria_labelledby: "form-draft-title",
+            // The suggestion list closes on any tap outside the client name
+            // field (which stops propagation) and on scroll gestures. The
+            // real scroller is an ancestor (`main.screen-scroll` in the app
+            // shell) and `scroll` does not bubble, so a local `onscroll`
+            // would never fire — `touchmove`/`wheel` do bubble and cover the
+            // Android gesture and the desktop dev loop. The list flows
+            // inside the scroll view, so it never overlays the keyboard.
+            onclick: move |_| close_client_suggestions(client_suggestions),
+            ontouchmove: move |_| close_client_suggestions(client_suggestions),
+            onwheel: move |_| close_client_suggestions(client_suggestions),
             h2 { id: "form-draft-title", "{draft_title}" }
 
             section { class: "form-section", aria_labelledby: "form-client-title",
@@ -108,15 +122,67 @@ pub(super) fn Form() -> Element {
                         });
                     },
                 }
-                OutlinedField {
-                    label: "Nom".to_string(),
-                    name: "client-name".to_string(),
-                    value: current.client.name.clone(),
-                    oninput: move |event: FormEvent| {
-                        apply_edit(draft, edit_generation, |draft| {
-                            draft.client.name = event.value();
-                        });
-                    },
+                div {
+                    class: "client-autocomplete",
+                    onclick: move |event| event.stop_propagation(),
+                    OutlinedField {
+                        label: "Nom".to_string(),
+                        name: "client-name".to_string(),
+                        value: current.client.name.clone(),
+                        oninput: move |event: FormEvent| {
+                            let value = event.value();
+                            apply_edit(draft, edit_generation, |draft| {
+                                draft.client.name = value.clone();
+                            });
+                            refresh_client_suggestions(
+                                &suggestions_database,
+                                client_suggestions,
+                                &value,
+                            );
+                        },
+                        onfocus: move |_| {
+                            let name = draft
+                                .read()
+                                .as_ref()
+                                .map(|draft| draft.client.name.clone())
+                                .unwrap_or_default();
+                            refresh_client_suggestions(
+                                &focus_database,
+                                client_suggestions,
+                                &name,
+                            );
+                        },
+                    }
+                    if !suggestions.is_empty() {
+                        ul { class: "client-suggestions", aria_label: "Clients suggérés",
+                            // Index keys are acceptable here: rows are
+                            // stateless buttons, and two history clients can
+                            // share name and address (DISTINCT spans every
+                            // client field), so a content key could collide.
+                            for (index, client) in suggestions.into_iter().enumerate() {
+                                li { key: "{index}",
+                                    button {
+                                        class: "client-suggestion",
+                                        r#type: "button",
+                                        aria_label: suggestion_label(&client),
+                                        onclick: {
+                                            let client = client.clone();
+                                            move |_| {
+                                                apply_edit(draft, edit_generation, |draft| {
+                                                    fill_client_from_suggestion(draft, &client);
+                                                });
+                                                client_suggestions.set(Vec::new());
+                                            }
+                                        },
+                                        span { class: "client-suggestion__name", "{client.name}" }
+                                        if let Some(detail) = suggestion_detail(&client) {
+                                            span { class: "client-suggestion__detail", "{detail}" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 OutlinedField {
                     label: "Adresse".to_string(),
@@ -326,6 +392,67 @@ fn apply_edit(
         mutate(current);
         *edit_generation.write() += 1;
     }
+}
+
+/// Suggestions pop in from two typed characters (task 17) — counted in
+/// chars, not bytes, so an accented letter counts once.
+fn suggestion_query(name_value: &str) -> Option<&str> {
+    let trimmed = name_value.trim();
+    (trimmed.chars().count() >= 2).then_some(trimmed)
+}
+
+fn refresh_client_suggestions(
+    database: &DatabaseContext,
+    mut suggestions: Signal<Vec<ClientInput>>,
+    name_value: &str,
+) {
+    let matches = match suggestion_query(name_value) {
+        Some(query) => load_client_suggestions(database, query),
+        None => Vec::new(),
+    };
+    suggestions.set(matches);
+}
+
+/// Read-only assist on the issued documents history (task 08 query): a
+/// failing lookup only means no suggestions, never a broken form.
+fn load_client_suggestions(database: &DatabaseContext, query: &str) -> Vec<ClientInput> {
+    let Ok(database) = database.as_ref() else {
+        return Vec::new();
+    };
+    let Ok(connection) = database.lock() else {
+        return Vec::new();
+    };
+    search_clients(&connection, query).unwrap_or_else(|error| {
+        eprintln!("Client suggestion query failed: {error}");
+        Vec::new()
+    })
+}
+
+/// Tap on a suggestion pre-fills every client field (CONTEXT.md: no client
+/// book — name, address, email, phone, SIRET and billing address all come
+/// from issued documents). The fields stay editable afterwards: only this
+/// explicit pick rewrites them, later keystrokes are never overwritten.
+fn fill_client_from_suggestion(draft: &mut DocumentInput, suggestion: &ClientInput) {
+    draft.client = suggestion.clone();
+}
+
+fn close_client_suggestions(mut suggestions: Signal<Vec<ClientInput>>) {
+    if !suggestions.read().is_empty() {
+        suggestions.set(Vec::new());
+    }
+}
+
+/// Disambiguation line under the client name: street address first
+/// (homonyms), then email, then phone.
+fn suggestion_detail(client: &ClientInput) -> Option<String> {
+    if !client.address.is_empty() {
+        return Some(client.address.clone());
+    }
+    client.email.clone().or_else(|| client.phone.clone())
+}
+
+fn suggestion_label(client: &ClientInput) -> String {
+    format!("Pré-remplir le client avec {}", client.name)
 }
 
 fn open_new_line_editor(mut line_editor: Signal<Option<LineEditorState>>) {
@@ -603,13 +730,17 @@ fn line_row_label(index: usize, line: &LineInput) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::{
-        LineEditorState, cents_to_euro_input, client_kind_for_index, client_kind_index,
-        draft_title, issue_label, line_from_editor, line_row_label, move_line, optional_text,
-        parse_quantity, price_error, quantity_error,
+        DatabaseContext, LineEditorState, cents_to_euro_input, client_kind_for_index,
+        client_kind_index, draft_title, fill_client_from_suggestion, issue_label, line_from_editor,
+        line_row_label, load_client_suggestions, move_line, optional_text, parse_quantity,
+        price_error, quantity_error, suggestion_detail, suggestion_query,
     };
     use crate::domain::{
-        models::{ClientKind, DocumentKind, LineInput},
+        db::{issue_document, open_database},
+        models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
         money::parse_eur_to_cents,
         validation::{MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
     };
@@ -818,6 +949,140 @@ mod tests {
             ..line
         };
         assert!(line_row_label(0, &untitled).starts_with("Ligne 1 : Sans désignation (Salé),"));
+    }
+
+    #[test]
+    fn suggestion_query_requires_two_characters_after_trimming() {
+        for value in ["", "  ", "m", " m ", "é"] {
+            assert_eq!(
+                suggestion_query(value),
+                None,
+                "{value:?} should not trigger a search"
+            );
+        }
+        assert_eq!(suggestion_query("ma"), Some("ma"));
+        assert_eq!(suggestion_query("  mai  "), Some("mai"));
+        assert_eq!(suggestion_query("ém"), Some("ém"));
+    }
+
+    #[test]
+    fn suggestion_detail_prefers_address_then_email_then_phone() {
+        let mut client = mairie_client();
+        assert_eq!(
+            suggestion_detail(&client).as_deref(),
+            Some("12 rue Émile Zola, Lyon")
+        );
+
+        client.address = String::new();
+        assert_eq!(
+            suggestion_detail(&client).as_deref(),
+            Some("contact@example.com")
+        );
+
+        client.email = None;
+        assert_eq!(suggestion_detail(&client).as_deref(), Some("0601020304"));
+
+        client.phone = None;
+        assert_eq!(suggestion_detail(&client), None);
+    }
+
+    #[test]
+    fn fill_client_from_suggestion_replaces_every_field_then_stays_editable() {
+        let mut draft = empty_draft();
+        let suggestion = mairie_client();
+
+        fill_client_from_suggestion(&mut draft, &suggestion);
+        assert_eq!(draft.client, suggestion);
+
+        // The form never re-applies a picked suggestion: later manual edits
+        // only touch their own field (acceptance: no re-overwriting).
+        draft.client.address = "3 place Bellecour, Lyon".to_string();
+        draft.client.name = "Mairie de Lyon — protocole".to_string();
+        assert_eq!(draft.client.address, "3 place Bellecour, Lyon");
+        assert_eq!(draft.client.name, "Mairie de Lyon — protocole");
+        assert_eq!(draft.client.email, suggestion.email);
+        assert_eq!(draft.client.phone, suggestion.phone);
+        assert_eq!(draft.client.business_id, suggestion.business_id);
+        assert_eq!(draft.client.billing_address, suggestion.billing_address);
+    }
+
+    #[test]
+    fn load_client_suggestions_matches_issued_document_history() {
+        let file = tempfile::NamedTempFile::new().expect("create temp db");
+        let mut database = open_database(file.path()).expect("open initialized db");
+        let input = DocumentInput {
+            client: mairie_client(),
+            ..valid_quote_input()
+        };
+        issue_document(
+            database.get_mut().expect("lock db"),
+            input,
+            None,
+            "2026-07-22T10:00:00Z",
+        )
+        .expect("issue document");
+        let context: DatabaseContext = Ok(Arc::new(database));
+
+        let matches = load_client_suggestions(&context, "mai");
+        assert_eq!(matches, vec![mairie_client()]);
+    }
+
+    #[test]
+    fn load_client_suggestions_stays_empty_without_history_or_database() {
+        let file = tempfile::NamedTempFile::new().expect("create temp db");
+        let database = open_database(file.path()).expect("open initialized db");
+        let context: DatabaseContext = Ok(Arc::new(database));
+        assert!(load_client_suggestions(&context, "mai").is_empty());
+
+        let broken: DatabaseContext = Err("base indisponible".to_string());
+        assert!(load_client_suggestions(&broken, "mai").is_empty());
+    }
+
+    fn mairie_client() -> ClientInput {
+        ClientInput {
+            kind: ClientKind::Professional,
+            name: "Mairie de Lyon".to_string(),
+            address: "12 rue Émile Zola, Lyon".to_string(),
+            email: Some("contact@example.com".to_string()),
+            phone: Some("0601020304".to_string()),
+            business_id: Some("123 456 789 00010".to_string()),
+            billing_address: Some("Étage 1".to_string()),
+        }
+    }
+
+    fn valid_quote_input() -> DocumentInput {
+        DocumentInput {
+            kind: DocumentKind::Quote,
+            issue_date: "2026-07-22".to_string(),
+            event_date: "2026-08-15".to_string(),
+            payment_terms: "à réception".to_string(),
+            client: mairie_client(),
+            lines: vec![LineInput {
+                group: Some("Salé".to_string()),
+                description: "Mini burgers".to_string(),
+                quantity: 50,
+                unit_price_cents: 85,
+            }],
+        }
+    }
+
+    fn empty_draft() -> DocumentInput {
+        DocumentInput {
+            kind: DocumentKind::Quote,
+            issue_date: String::new(),
+            event_date: String::new(),
+            payment_terms: String::new(),
+            client: ClientInput {
+                kind: ClientKind::Individual,
+                name: String::new(),
+                address: String::new(),
+                email: None,
+                phone: None,
+                business_id: None,
+                billing_address: None,
+            },
+            lines: Vec::new(),
+        }
     }
 
     fn sample_lines() -> Vec<LineInput> {

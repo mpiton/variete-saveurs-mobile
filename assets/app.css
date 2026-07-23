@@ -652,6 +652,49 @@ input[aria-busy="true"]:disabled {
     flex: 1;
 }
 
+.client-autocomplete {
+    display: grid;
+    gap: var(--space-xs);
+}
+
+/* Discreet in-flow list: it scrolls with the form, so the keyboard never
+   sits on top of it, and the query already caps it at five rows. */
+.client-suggestions {
+    display: grid;
+    gap: var(--touch-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.client-suggestion {
+    display: grid;
+    width: 100%;
+    min-height: var(--touch-target);
+    align-content: center;
+    gap: 2px;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface-dim);
+    color: var(--color-ink);
+    cursor: pointer;
+    text-align: left;
+}
+
+.client-suggestion:active {
+    background: var(--color-primary-tint);
+}
+
+.client-suggestion__name {
+    font-size: var(--type-body-large-size);
+}
+
+.client-suggestion__detail {
+    color: var(--color-muted);
+    font-size: var(--type-body-medium-size);
+}
+
 .line-list {
     display: grid;
     gap: var(--touch-gap);
