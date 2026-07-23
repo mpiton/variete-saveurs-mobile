@@ -15,7 +15,7 @@ use rusqlite::Connection;
 
 use crate::{domain::db::open_database, platform::paths::database_path};
 
-use super::components::ComponentsDemo;
+use super::home::Home;
 
 const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str =
@@ -29,7 +29,7 @@ const BACK_EVENT_BRIDGE: &str = r#"
     await new Promise(() => {});
 "#;
 
-type DatabaseContext = Result<Arc<Mutex<Connection>>, String>;
+pub(super) type DatabaseContext = Result<Arc<Mutex<Connection>>, String>;
 
 struct AppHistory {
     memory: MemoryHistory,
@@ -135,14 +135,14 @@ impl History for AppHistory {
 
 #[derive(Clone, Debug, PartialEq, Routable)]
 #[rustfmt::skip]
-enum Route {
+pub(super) enum Route {
     #[layout(AppShell)]
         #[route("/")]
         Home {},
         #[route("/formulaire")]
         Form {},
-        #[route("/fiche")]
-        Record {},
+        #[route("/fiche/:id")]
+        Record { id: i64 },
         #[route("/apercu")]
         Preview {},
         #[route("/composition")]
@@ -158,7 +158,7 @@ impl Route {
         match self {
             Self::Home {} => "Accueil",
             Self::Form {} => "Formulaire",
-            Self::Record {} => "Fiche",
+            Self::Record { .. } => "Fiche",
             Self::Preview {} => "Aperçu",
             Self::Compose {} => "Composition",
             Self::Catalog {} => "Catalogue",
@@ -268,37 +268,6 @@ fn AppShell() -> Element {
 }
 
 #[component]
-fn Home() -> Element {
-    rsx! {
-        div { class: "screen",
-            nav { aria_label: "Écrans principaux",
-                ul { class: "route-list",
-                    RouteItem { route: Route::Form {}, label: "Formulaire" }
-                    RouteItem { route: Route::Record {}, label: "Fiche" }
-                    RouteItem { route: Route::Preview {}, label: "Aperçu" }
-                    RouteItem { route: Route::Compose {}, label: "Composition" }
-                }
-            }
-            ComponentsDemo {}
-        }
-    }
-}
-
-#[component]
-fn RouteItem(route: Route, label: &'static str) -> Element {
-    rsx! {
-        li {
-            Link {
-                class: "route-link",
-                to: route,
-                span { "{label}" }
-                span { aria_hidden: "true", "→" }
-            }
-        }
-    }
-}
-
-#[component]
 fn Form() -> Element {
     rsx! {
         section { class: "screen", aria_labelledby: "form-title",
@@ -320,7 +289,8 @@ fn Form() -> Element {
 }
 
 #[component]
-fn Record() -> Element {
+fn Record(id: i64) -> Element {
+    let _ = id;
     rsx! { Placeholder { title: "Fiche", description: "Détail d’un document émis à venir." } }
 }
 
@@ -389,7 +359,7 @@ mod tests {
         let routes = [
             (Route::Home {}, "/", "Accueil"),
             (Route::Form {}, "/formulaire", "Formulaire"),
-            (Route::Record {}, "/fiche", "Fiche"),
+            (Route::Record { id: 42 }, "/fiche/42", "Fiche"),
             (Route::Preview {}, "/apercu", "Aperçu"),
             (Route::Compose {}, "/composition", "Composition"),
             (Route::Catalog {}, "/catalogue", "Catalogue"),

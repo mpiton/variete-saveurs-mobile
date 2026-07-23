@@ -34,7 +34,12 @@ pub fn BottomSheet(
                 class: "bottom-sheet",
                 div { class: "bottom-sheet__handle", aria_hidden: "true" }
                 h2 { id: title_id, "{title}" }
-                div { class: "bottom-sheet__content", aria_hidden: loading, inert: loading, {children} }
+                div {
+                    class: "bottom-sheet__content",
+                    aria_hidden: loading,
+                    inert: loading.then_some("true"),
+                    {children}
+                }
                 if loading {
                     span { class: "spinner", aria_hidden: "true" }
                 }
