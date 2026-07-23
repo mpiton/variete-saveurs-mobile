@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 
 use super::models::{CatalogItem, DocumentInput, DocumentKind};
 
-const MAX_LINE_QUANTITY: i64 = 100_000;
+pub const MAX_LINE_QUANTITY: i64 = 100_000;
 pub const MAX_UNIT_PRICE_CENTS: i64 = 10_000_000;
 const MAX_LINE_AMOUNT_CENTS: i64 = 100_000_000;
 const MAX_DOCUMENT_TOTAL_CENTS: i64 = 100_000_000;

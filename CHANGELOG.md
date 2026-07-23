@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Draft form line editor: summarized rows with group, detail and subtotal,
+  add/edit/delete/reorder in a bottom sheet (two-tap inline delete
+  confirmation, no dialog), integer-only euro price parsing in the domain,
+  and a sticky teal-tint total pill above the chrome action bar.
+
 - Draft form screen with stacked client, dates, and payment-terms sections,
   kind-aware labels, debounced auto-save to the draft store, and a sticky
   chrome action bar (Preview wired, Issue pending the task 20 flow).

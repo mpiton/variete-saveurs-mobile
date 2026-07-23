@@ -605,12 +605,38 @@ input[aria-busy="true"]:disabled {
     background: var(--color-surface);
 }
 
-.form-action-bar {
+.form-sticky {
     position: sticky;
     bottom: 0;
+    display: grid;
+    gap: var(--space-sm);
+    margin-top: auto;
+}
+
+.total-pill {
+    justify-self: end;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-pill);
+    background: var(--color-primary-tint);
+    color: var(--color-primary) !important;
+}
+
+.total-pill__label {
+    font-size: var(--type-label-medium-size);
+    font-weight: 700;
+}
+
+.total-pill__amount {
+    font-size: var(--type-title-large-size);
+    font-weight: 700;
+}
+
+.form-action-bar {
     display: flex;
     gap: var(--touch-gap);
-    margin-top: auto;
     margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
     margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
     padding:
@@ -623,6 +649,72 @@ input[aria-busy="true"]:disabled {
 
 .form-action-bar .m3-button:last-child {
     flex: 1;
+}
+
+.line-list {
+    display: grid;
+    gap: var(--touch-gap);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.line-row__main {
+    display: grid;
+    width: 100%;
+    min-height: var(--touch-target);
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 2px var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    cursor: pointer;
+    text-align: left;
+}
+
+.line-row__main:active {
+    background: var(--color-surface-dim);
+}
+
+.line-row__group {
+    grid-column: 1 / -1;
+    color: var(--color-primary);
+    font-size: var(--type-label-medium-size);
+    font-weight: 700;
+}
+
+.line-row__description {
+    grid-column: 1 / -1;
+    font-size: var(--type-body-large-size);
+}
+
+.line-row__detail {
+    color: var(--color-muted);
+    font-size: var(--type-body-medium-size);
+}
+
+.line-row__amount {
+    justify-self: end;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.line-sheet__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-sm);
+}
+
+.line-sheet__delete {
+    justify-self: start;
+    color: var(--color-danger);
+}
+
+.line-sheet__delete.is-confirm {
+    border-color: var(--color-danger);
 }
 
 .document-card {
