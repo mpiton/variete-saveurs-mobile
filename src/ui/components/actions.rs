@@ -5,7 +5,6 @@ pub enum ButtonVariant {
     #[default]
     Filled,
     Tonal,
-    #[expect(dead_code, reason = "used by form actions in task 14")]
     Outlined,
     Text,
 }
