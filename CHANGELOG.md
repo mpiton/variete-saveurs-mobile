@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Catalog management screen: every item grouped by group, add/edit in a
+  bottom sheet (name, euro price, unit, group, active toggle), deactivation
+  instead of deletion so issued documents keep their copied lines.
+- Catalog picker bottom sheet in the draft form: active items as two-column
+  chips (name + price) grouped by group, one tap adds a pre-filled line
+  (quantity 1), free-form entry stays available via the line sheet.
+- Catalog persistence queries (desktop pattern): full list, active-only
+  list, and insert/update upsert with regression tests.
+
 - Draft form line editor: summarized rows with group, detail and subtotal,
   add/edit/delete/reorder in a bottom sheet (two-tap inline delete
   confirmation, no dialog), integer-only euro price parsing in the domain,

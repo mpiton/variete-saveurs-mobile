@@ -3,7 +3,9 @@ use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params, types::Type};
 
-use super::models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput};
+use super::models::{
+    CatalogItem, ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput,
+};
 use super::numbering::reserve_number;
 use super::validation::validate_document;
 
@@ -24,6 +26,11 @@ const DOCUMENT_SELECT: &str = "
                SELECT 1 FROM documents invoice WHERE invoice.source_quote_id = d.id
            ) AS is_invoiced
     FROM documents d
+";
+
+const CATALOG_SELECT: &str = "
+    SELECT id, name, group_name, unit_price_cents, unit, active
+    FROM catalog_items
 ";
 
 pub fn open_database(path: &Path) -> rusqlite::Result<Mutex<Connection>> {
@@ -134,6 +141,63 @@ pub fn seed_catalog(connection: &Connection) -> rusqlite::Result<()> {
         )?;
     }
     transaction.commit()
+}
+
+/// Every catalog item, inactive ones included, for the management screen.
+/// Ordering (group then name) matches the picker grouping — SQLite sorts
+/// NULL group names first.
+pub fn list_catalog(connection: &Connection) -> rusqlite::Result<Vec<CatalogItem>> {
+    let mut statement =
+        connection.prepare(&format!("{CATALOG_SELECT} ORDER BY group_name, name"))?;
+    statement.query_map([], catalog_item_from_row)?.collect()
+}
+
+/// Active items only: the form picker never offers an inactive item, while
+/// past documents keep their own copied lines.
+pub fn list_active_catalog_items(connection: &Connection) -> rusqlite::Result<Vec<CatalogItem>> {
+    let mut statement = connection.prepare(&format!(
+        "{CATALOG_SELECT} WHERE active = 1 ORDER BY group_name, name"
+    ))?;
+    statement.query_map([], catalog_item_from_row)?.collect()
+}
+
+/// Inserts a new item (`id: None`) or updates the existing row (`id: Some`).
+/// Deactivation is an update of `active` — items are never deleted, so issued
+/// documents (which copy their lines) are untouched by definition.
+pub fn upsert_catalog_item(connection: &Connection, item: &CatalogItem) -> rusqlite::Result<i64> {
+    let active = i64::from(item.active);
+    if let Some(id) = item.id {
+        let affected_rows = connection.execute(
+            "UPDATE catalog_items
+             SET name = ?1, group_name = ?2, unit_price_cents = ?3, unit = ?4, active = ?5
+             WHERE id = ?6",
+            params![
+                item.name,
+                item.group_name,
+                item.unit_price_cents,
+                item.unit,
+                active,
+                id
+            ],
+        )?;
+        if affected_rows == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(id)
+    } else {
+        connection.execute(
+            "INSERT INTO catalog_items (name, group_name, unit_price_cents, unit, active)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                item.name,
+                item.group_name,
+                item.unit_price_cents,
+                item.unit,
+                active
+            ],
+        )?;
+        Ok(connection.last_insert_rowid())
+    }
 }
 
 pub fn save_draft(
@@ -352,6 +416,17 @@ fn document_from_row(row: &Row<'_>) -> rusqlite::Result<Document> {
     })
 }
 
+fn catalog_item_from_row(row: &Row<'_>) -> rusqlite::Result<CatalogItem> {
+    Ok(CatalogItem {
+        id: Some(row.get("id")?),
+        name: row.get("name")?,
+        group_name: row.get("group_name")?,
+        unit_price_cents: row.get("unit_price_cents")?,
+        unit: row.get("unit")?,
+        active: row.get::<_, i64>("active")? != 0,
+    })
+}
+
 fn client_kind_text(kind: &ClientKind) -> &'static str {
     match kind {
         ClientKind::Individual => "individual",
@@ -412,10 +487,13 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        IssueError, clear_draft, get_document, insert_document, issue_document, list_documents,
-        load_draft, mark_sent, migrate, open_database, save_draft, search_clients, seed_catalog,
+        IssueError, clear_draft, get_document, insert_document, issue_document,
+        list_active_catalog_items, list_catalog, list_documents, load_draft, mark_sent, migrate,
+        open_database, save_draft, search_clients, seed_catalog, upsert_catalog_item,
     };
-    use crate::domain::models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput};
+    use crate::domain::models::{
+        CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput,
+    };
     use crate::domain::numbering::next_number;
 
     fn temp_connection() -> (tempfile::NamedTempFile, Connection) {
@@ -995,5 +1073,156 @@ mod tests {
                 "Mini Brochettes de fruits|Sucré|85|pièce|1"
             ]
         );
+    }
+
+    fn catalog_item(name: &str, group_name: Option<&str>, unit_price_cents: i64) -> CatalogItem {
+        CatalogItem {
+            id: None,
+            name: name.to_string(),
+            group_name: group_name.map(str::to_string),
+            unit_price_cents,
+            unit: Some("pièce".to_string()),
+            active: true,
+        }
+    }
+
+    #[test]
+    fn list_catalog_returns_every_item_ordered_by_group_then_name() {
+        let (_file, connection) = initialized_connection();
+        upsert_catalog_item(&connection, &catalog_item("Mini Wraps", Some("Salé"), 80))
+            .expect("insert wraps");
+        let inactive = CatalogItem {
+            active: false,
+            ..catalog_item("Pièce montée 60 choux", Some("Sucré"), 45_000)
+        };
+        upsert_catalog_item(&connection, &inactive).expect("insert inactive pièce montée");
+        upsert_catalog_item(&connection, &catalog_item("Café", None, 150)).expect("insert café");
+        upsert_catalog_item(&connection, &catalog_item("Mini Burgers", Some("Salé"), 85))
+            .expect("insert burgers");
+
+        let items = list_catalog(&connection).expect("list catalog");
+
+        // SQLite orders NULL group names first, then groups alphabetically.
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "Café",
+                "Mini Burgers",
+                "Mini Wraps",
+                "Pièce montée 60 choux"
+            ]
+        );
+        let piece_montee = items
+            .iter()
+            .find(|item| item.name == "Pièce montée 60 choux")
+            .expect("inactive item still listed");
+        assert!(!piece_montee.active);
+        assert!(items.iter().all(|item| item.id.is_some()));
+    }
+
+    #[test]
+    fn list_active_catalog_items_skips_inactive_ones() {
+        let (_file, connection) = initialized_connection();
+        upsert_catalog_item(&connection, &catalog_item("Mini Burgers", Some("Salé"), 85))
+            .expect("insert burgers");
+        let inactive = CatalogItem {
+            active: false,
+            ..catalog_item("Pièce montée 60 choux", Some("Sucré"), 45_000)
+        };
+        upsert_catalog_item(&connection, &inactive).expect("insert inactive pièce montée");
+
+        let active_items = list_active_catalog_items(&connection).expect("list active items");
+
+        assert_eq!(
+            active_items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Mini Burgers"]
+        );
+        assert!(active_items.iter().all(|item| item.active));
+    }
+
+    #[test]
+    fn upsert_catalog_item_inserts_then_updates_the_same_row() {
+        let (_file, connection) = initialized_connection();
+
+        let id = upsert_catalog_item(
+            &connection,
+            &catalog_item("Pièce montée 60 choux", Some("Sucré"), 45_000),
+        )
+        .expect("insert pièce montée");
+        let updated = CatalogItem {
+            id: Some(id),
+            unit_price_cents: 48_000,
+            active: false,
+            ..catalog_item("Pièce montée 60 choux", Some("Sucré"), 45_000)
+        };
+        assert_eq!(
+            upsert_catalog_item(&connection, &updated).expect("update pièce montée"),
+            id
+        );
+
+        let items = list_catalog(&connection).expect("list catalog");
+        assert_eq!(items, [updated]);
+    }
+
+    #[test]
+    fn upsert_catalog_item_rejects_an_unknown_id() {
+        let (_file, connection) = initialized_connection();
+        let ghost = CatalogItem {
+            id: Some(999),
+            ..catalog_item("Fantôme", None, 100)
+        };
+
+        assert!(upsert_catalog_item(&connection, &ghost).is_err());
+        assert!(list_catalog(&connection).expect("list catalog").is_empty());
+    }
+
+    #[test]
+    fn deactivating_a_catalog_item_keeps_it_listed_for_management() {
+        let (_file, connection) = initialized_connection();
+        let id = upsert_catalog_item(&connection, &catalog_item("Mini Burgers", Some("Salé"), 85))
+            .expect("insert burgers");
+
+        let deactivated = CatalogItem {
+            id: Some(id),
+            active: false,
+            ..catalog_item("Mini Burgers", Some("Salé"), 85)
+        };
+        upsert_catalog_item(&connection, &deactivated).expect("deactivate burgers");
+
+        let items = list_catalog(&connection).expect("list catalog");
+        assert_eq!(items, [deactivated]);
+        assert!(
+            list_active_catalog_items(&connection)
+                .expect("list active items")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn editing_a_catalog_price_never_rewrites_issued_documents() {
+        let (_file, mut connection) = initialized_connection();
+        let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
+        let document_id =
+            persist_document(&mut connection, 10, &input, None, "2026-07-22T10:00:00Z");
+        let item_id =
+            upsert_catalog_item(&connection, &catalog_item("Mini burgers", Some("Salé"), 85))
+                .expect("insert catalog item");
+
+        let repriced = CatalogItem {
+            id: Some(item_id),
+            unit_price_cents: 120,
+            ..catalog_item("Mini burgers", Some("Salé"), 85)
+        };
+        upsert_catalog_item(&connection, &repriced).expect("reprice catalog item");
+
+        let saved = get_document(&connection, document_id).expect("get document");
+        assert_eq!(saved.input, input);
+        assert_eq!(saved.total_cents, 5_100);
     }
 }

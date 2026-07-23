@@ -970,6 +970,77 @@ input[aria-busy="true"]:disabled {
     gap: var(--touch-gap);
 }
 
+.catalog-groups {
+    display: grid;
+    gap: var(--space-md);
+}
+
+.catalog-group {
+    display: grid;
+    gap: var(--space-sm);
+}
+
+.catalog-group h3 {
+    margin: 0;
+    color: var(--color-label);
+    font-size: var(--type-title-medium-size);
+    font-weight: var(--type-title-medium-weight);
+}
+
+.catalog-row__status {
+    justify-self: end;
+    color: var(--color-muted);
+    font-size: var(--type-label-medium-size);
+    font-weight: 700;
+}
+
+.catalog-picker__group {
+    display: grid;
+    gap: var(--space-sm);
+}
+
+.catalog-picker__group h3 {
+    margin: 0;
+    color: var(--color-label);
+    font-size: var(--type-title-medium-size);
+    font-weight: var(--type-title-medium-weight);
+}
+
+.catalog-picker__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--touch-gap);
+}
+
+/* Task 16: chips stay at 54px minimum, above the 48dp touch floor. */
+.catalog-chip {
+    display: grid;
+    min-height: 54px;
+    align-content: center;
+    gap: 2px;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    cursor: pointer;
+    text-align: left;
+}
+
+.catalog-chip:active {
+    background: var(--color-surface-dim);
+}
+
+.catalog-chip__name {
+    font-size: var(--type-body-medium-size);
+    font-weight: 700;
+}
+
+.catalog-chip__price {
+    color: var(--color-muted);
+    font-size: var(--type-body-medium-size);
+}
+
 @media (max-height: 400px) {
     .top-app-bar {
         min-height: calc(56px + var(--system-inset-top));
