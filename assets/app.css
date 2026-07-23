@@ -613,7 +613,8 @@ input[aria-busy="true"]:disabled {
     margin-top: auto;
 }
 
-.total-pill {
+/* Specificity must beat `.screen p` (0,1,1), which sets a muted color. */
+.form-sticky .total-pill {
     justify-self: end;
     display: flex;
     align-items: baseline;
@@ -621,7 +622,7 @@ input[aria-busy="true"]:disabled {
     padding: var(--space-xs) var(--space-md);
     border-radius: var(--radius-pill);
     background: var(--color-primary-tint);
-    color: var(--color-primary) !important;
+    color: var(--color-primary);
 }
 
 .total-pill__label {

@@ -2,7 +2,10 @@
 //! and edited in this sheet — the pattern chosen for mobile line editing
 //! (left open by DESIGN §5), consistent with the catalog sheet and the Règle
 //! du Carnet. Deletion is a lightweight two-tap inline confirmation, never a
-//! dialog.
+//! dialog; a minimum delay between the two taps filters accidental
+//! double-taps.
+
+use std::time::{Duration, Instant};
 
 use dioxus::prelude::*;
 
@@ -11,6 +14,10 @@ use super::{
     feedback::BottomSheet,
     fields::OutlinedField,
 };
+
+/// Minimum delay between arming the deletion and accepting the confirming
+/// tap, so an accidental double-tap cannot delete a line.
+const DELETE_CONFIRM_MIN_DELAY: Duration = Duration::from_millis(400);
 
 /// Editor draft for one line, owned by the form screen: raw field strings.
 /// The price is typed in euros and converted to cents by the domain
@@ -24,6 +31,9 @@ pub struct LineEditorState {
     pub price: String,
     pub group: String,
     pub confirm_delete: bool,
+    /// When the deletion was armed — the confirming tap is only accepted
+    /// after `DELETE_CONFIRM_MIN_DELAY`.
+    pub confirm_armed_at: Option<Instant>,
     pub quantity_error: Option<String>,
     pub price_error: Option<String>,
 }
@@ -98,7 +108,10 @@ pub fn LineSheet(
             }
             Button {
                 label: "Enregistrer".to_string(),
-                onclick: move |event| on_save.call(event),
+                onclick: move |event| {
+                    disarm_delete(editor);
+                    on_save.call(event);
+                },
             }
             if editing {
                 div { class: "line-sheet__row",
@@ -106,13 +119,19 @@ pub fn LineSheet(
                         label: "Monter".to_string(),
                         variant: ButtonVariant::Outlined,
                         disabled: !can_move_up,
-                        onclick: move |event| on_move_up.call(event),
+                        onclick: move |event| {
+                            disarm_delete(editor);
+                            on_move_up.call(event);
+                        },
                     }
                     Button {
                         label: "Descendre".to_string(),
                         variant: ButtonVariant::Outlined,
                         disabled: !can_move_down,
-                        onclick: move |event| on_move_down.call(event),
+                        onclick: move |event| {
+                            disarm_delete(editor);
+                            on_move_down.call(event);
+                        },
                     }
                 }
                 // Raw button mirroring `ButtonVariant::Text`: `Button` has no
@@ -121,16 +140,27 @@ pub fn LineSheet(
                     class: delete_class,
                     r#type: "button",
                     onclick: move |event| {
-                        if editor.read().as_ref().is_some_and(|state| state.confirm_delete) {
+                        let armed_at = editor
+                            .read()
+                            .as_ref()
+                            .filter(|state| state.confirm_delete)
+                            .and_then(|state| state.confirm_armed_at);
+                        if confirm_delete_ready(armed_at) {
                             on_delete.call(event);
                         } else if let Some(state) = editor.write().as_mut() {
                             state.confirm_delete = true;
+                            state.confirm_armed_at = Some(Instant::now());
                         }
                     },
                     if state.confirm_delete {
                         "Confirmer la suppression"
                     } else {
                         "Supprimer la ligne"
+                    }
+                }
+                if state.confirm_delete {
+                    span { class: "visually-hidden", role: "status",
+                        "Appuyez à nouveau pour confirmer la suppression."
                     }
                 }
             }
@@ -145,6 +175,46 @@ fn update_editor(
 ) {
     if let Some(state) = editor.write().as_mut() {
         mutate(state);
+    }
+    disarm_delete(editor);
+}
+
+/// Non-delete actions (save, move) reset the armed deletion, so the next
+/// delete tap always starts a fresh two-tap sequence.
+fn disarm_delete(mut editor: Signal<Option<LineEditorState>>) {
+    if let Some(state) = editor.write().as_mut() {
         state.confirm_delete = false;
+        state.confirm_armed_at = None;
+    }
+}
+
+/// The confirming tap is only accepted once the arming tap is at least
+/// `DELETE_CONFIRM_MIN_DELAY` old.
+fn confirm_delete_ready(armed_at: Option<Instant>) -> bool {
+    armed_at.is_some_and(|armed_at| armed_at.elapsed() >= DELETE_CONFIRM_MIN_DELAY)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use super::{DELETE_CONFIRM_MIN_DELAY, confirm_delete_ready};
+
+    #[test]
+    fn confirm_delete_requires_an_armed_state() {
+        assert!(!confirm_delete_ready(None));
+    }
+
+    #[test]
+    fn confirm_delete_rejects_taps_inside_the_double_tap_window() {
+        assert!(!confirm_delete_ready(Some(Instant::now())));
+        let just_armed = Instant::now() - (DELETE_CONFIRM_MIN_DELAY / 2);
+        assert!(!confirm_delete_ready(Some(just_armed)));
+    }
+
+    #[test]
+    fn confirm_delete_accepts_taps_after_the_delay() {
+        let armed_earlier = Instant::now() - DELETE_CONFIRM_MIN_DELAY - Duration::from_millis(1);
+        assert!(confirm_delete_ready(Some(armed_earlier)));
     }
 }

@@ -13,7 +13,7 @@ use crate::domain::{
     db::{load_draft, save_draft},
     models::{ClientKind, DocumentInput, DocumentKind, LineInput},
     money::{format_eur, parse_eur_to_cents},
-    validation::{MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
+    validation::{MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
 };
 
 use super::{
@@ -204,6 +204,10 @@ pub(super) fn Form() -> Element {
                     p { "Aucune prestation pour l’instant." }
                 } else {
                     ul { class: "line-list",
+                        // Index keys are acceptable here: rows are stateless
+                        // (content is derived from the line, no local state or
+                        // focus to preserve across reorders), and `LineInput`
+                        // has no stable identifier to key on.
                         for (index, line) in current.lines.iter().enumerate() {
                             li { key: "{index}",
                                 button {
@@ -359,15 +363,22 @@ fn line_from_editor(state: &mut LineEditorState) -> Option<LineInput> {
     if state.quantity_error.is_some() || state.price_error.is_some() {
         return None;
     }
-    match (quantity, unit_price_cents) {
-        (Some(quantity), Some(unit_price_cents)) => Some(LineInput {
-            group: optional_text(&state.group),
-            description: state.description.trim().to_string(),
-            quantity,
-            unit_price_cents,
-        }),
-        _ => None,
+    let (Some(quantity), Some(unit_price_cents)) = (quantity, unit_price_cents) else {
+        return None;
+    };
+    if quantity
+        .checked_mul(unit_price_cents)
+        .is_none_or(|amount| amount > MAX_LINE_AMOUNT_CENTS)
+    {
+        state.price_error = Some("Le montant de la ligne dépasse la limite autorisée.".to_string());
+        return None;
     }
+    Some(LineInput {
+        group: optional_text(&state.group),
+        description: state.description.trim().to_string(),
+        quantity,
+        unit_price_cents,
+    })
 }
 
 fn delete_line(
@@ -693,6 +704,25 @@ mod tests {
         for cents in [0, 5, 50, 85, 1_234, 1_000_000, i64::MAX] {
             assert_eq!(parse_eur_to_cents(&cents_to_euro_input(cents)), Some(cents));
         }
+    }
+
+    #[test]
+    fn line_from_editor_rejects_line_amount_above_the_domain_cap() {
+        let mut state = LineEditorState {
+            quantity: "11".to_string(),
+            price: cents_to_euro_input(MAX_UNIT_PRICE_CENTS),
+            ..LineEditorState::default()
+        };
+
+        assert_eq!(line_from_editor(&mut state), None);
+        assert_eq!(
+            state.price_error,
+            Some("Le montant de la ligne dépasse la limite autorisée.".to_string())
+        );
+
+        // One unit fewer: exactly at the cap — accepted.
+        state.quantity = "10".to_string();
+        assert!(line_from_editor(&mut state).is_some());
     }
 
     #[test]
