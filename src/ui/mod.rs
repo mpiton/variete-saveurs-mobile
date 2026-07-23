@@ -3,6 +3,7 @@
 
 mod app;
 mod components;
+mod form;
 mod home;
 
 pub use app::app;

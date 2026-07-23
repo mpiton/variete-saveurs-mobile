@@ -15,7 +15,7 @@ use rusqlite::Connection;
 
 use crate::{domain::db::open_database, platform::paths::database_path};
 
-use super::home::Home;
+use super::{form::Form, home::Home};
 
 const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str =
@@ -262,27 +262,6 @@ fn AppShell() -> Element {
                     p { class: "startup-error", role: "alert", "{error}" }
                 }
                 Outlet::<Route> {}
-            }
-        }
-    }
-}
-
-#[component]
-fn Form() -> Element {
-    rsx! {
-        section { class: "screen", aria_labelledby: "form-title",
-            div { class: "placeholder-panel",
-                h2 { id: "form-title", "Formulaire" }
-                p { "Structure du brouillon à venir." }
-                label { class: "field",
-                    "Nom du client"
-                    input {
-                        r#type: "text",
-                        name: "client-name-placeholder",
-                        autocomplete: "off",
-                        placeholder: "Touchez pour vérifier le clavier",
-                    }
-                }
             }
         }
     }
