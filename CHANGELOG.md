@@ -54,3 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scaffold `devis-mobile` Dioxus crate: `ui → domain ← platform` module layout,
   Android config (`fr.variete_saveurs.devis_factures`), document templates
   copied from the desktop app, dependency-rule regression test.
+
+- Client autocomplete in the draft form name field: from two typed
+  characters, up to five clients suggested from the issued-document history,
+  one tap pre-fills every client field (kind, address, email, phone, SIRET,
+  billing address) and stays editable afterwards; the inline list dismisses
+  on outside taps and scroll gestures and never overlays the keyboard.

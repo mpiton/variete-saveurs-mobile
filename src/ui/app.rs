@@ -31,6 +31,13 @@ const BACK_EVENT_BRIDGE: &str = r#"
 
 pub(super) type DatabaseContext = Result<Arc<Mutex<Connection>>, String>;
 
+/// Bumped by the app shell on any tap or scroll gesture that bubbles up to
+/// it, so screens can dismiss transient affordances on outside interaction
+/// (the form's client suggestions close this way — their wrapper stops its
+/// own taps from bubbling to the shell).
+#[derive(Clone, Copy)]
+pub(super) struct OutsideInteraction(pub Signal<u64>);
+
 struct AppHistory {
     memory: MemoryHistory,
     document: Rc<dyn Document>,
@@ -205,6 +212,7 @@ fn AppShell() -> Element {
     let database_error = use_context::<DatabaseContext>().as_ref().err().cloned();
     let history = use_context::<Rc<AppHistory>>();
     let mut menu_open = use_signal(|| false);
+    let mut outside_interaction = use_context_provider(|| OutsideInteraction(Signal::new(0_u64)));
 
     use_future(move || {
         let history = history.clone();
@@ -219,6 +227,12 @@ fn AppShell() -> Element {
 
     rsx! {
         div { class: "app-shell",
+            // Broadcast every tap and scroll gesture in the shell (top bar,
+            // scroll gutter included) so transient affordances can dismiss
+            // themselves; they stop their own inner taps from bubbling here.
+            onclick: move |_| *outside_interaction.0.write() += 1,
+            ontouchmove: move |_| *outside_interaction.0.write() += 1,
+            onwheel: move |_| *outside_interaction.0.write() += 1,
             header { class: "top-app-bar",
                 if can_go_back {
                     button {

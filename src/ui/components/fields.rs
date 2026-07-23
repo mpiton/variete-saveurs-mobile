@@ -13,6 +13,7 @@ pub fn OutlinedField(
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
     #[props(default)] error: Option<String>,
+    #[props(default)] onfocus: Option<EventHandler<FocusEvent>>,
 ) -> Element {
     let input_id = field_id(&name, id_suffix.as_deref());
     let error_id = format!("{input_id}-error");
@@ -35,6 +36,11 @@ pub fn OutlinedField(
                 aria_invalid: has_error,
                 aria_describedby: error_reference,
                 oninput: move |event| oninput.call(event),
+                onfocus: move |event| {
+                    if let Some(handler) = &onfocus {
+                        handler.call(event);
+                    }
+                },
             }
             label { r#for: input_id, "{label}" }
             if loading {
