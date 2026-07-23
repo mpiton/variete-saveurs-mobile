@@ -1,7 +1,8 @@
 //! Draft form screen: stacked sections (client, dates, lines, payment terms)
 //! bound to the domain `DocumentInput`, with debounced auto-save to the draft
-//! store. Lines are summarized as rows and edited in a bottom sheet
-//! (`LineSheet`); the issue flow lands in task 20.
+//! store. Lines are summarized as rows, added from the catalog picker sheet
+//! (or typed freely) and edited in a bottom sheet (`LineSheet`); the issue
+//! flow lands in task 20.
 
 use std::time::Duration;
 
@@ -10,8 +11,8 @@ use dioxus::prelude::*;
 use tokio::time::sleep;
 
 use crate::domain::{
-    db::{load_draft, save_draft},
-    models::{ClientKind, DocumentInput, DocumentKind, LineInput},
+    db::{list_active_catalog_items, load_draft, save_draft},
+    models::{CatalogItem, ClientKind, DocumentInput, DocumentKind, LineInput},
     money::{format_eur, parse_eur_to_cents},
     validation::{MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
 };
@@ -19,8 +20,8 @@ use crate::domain::{
 use super::{
     app::{DatabaseContext, Route},
     components::{
-        Button, ButtonVariant, ErrorBlock, LineEditorState, LineSheet, OutlinedField,
-        SegmentedButton,
+        Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
+        OutlinedField, SegmentedButton, line_from_catalog_item,
     },
 };
 
@@ -31,10 +32,13 @@ pub(super) fn Form() -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
     let initial_database = database.clone();
+    let catalog_database = database.clone();
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
     let line_editor = use_signal(|| None::<LineEditorState>);
+    let mut catalog_picker = use_signal(|| None::<Vec<CatalogItem>>);
+    let picker_error = use_signal(|| None::<String>);
 
     // Debounced auto-save: every edit bumps `edit_generation`; the save only
     // runs once the generation has been stable for AUTOSAVE_DEBOUNCE.
@@ -80,6 +84,7 @@ pub(super) fn Form() -> Element {
     let issue_label = issue_label(&current.kind).to_string();
     let is_professional = current.client.kind == ClientKind::Professional;
     let save_error_message = save_error();
+    let picker_error_message = picker_error();
     let line_count = current.lines.len();
     let (can_move_up, can_move_down) = line_editor
         .read()
@@ -228,10 +233,16 @@ pub(super) fn Form() -> Element {
                         }
                     }
                 }
+                if let Some(error) = picker_error_message {
+                    ErrorBlock {
+                        title: "Catalogue indisponible".to_string(),
+                        message: error,
+                    }
+                }
                 Button {
                     label: "Ajouter une prestation".to_string(),
                     variant: ButtonVariant::Tonal,
-                    onclick: move |_| open_new_line_editor(line_editor),
+                    onclick: move |_| open_catalog_picker(&catalog_database, catalog_picker, picker_error),
                 }
             }
 
@@ -287,6 +298,20 @@ pub(super) fn Form() -> Element {
                 on_delete: move |_| delete_line(draft, edit_generation, line_editor),
                 on_move_up: move |_| move_draft_line(draft, edit_generation, line_editor, true),
                 on_move_down: move |_| move_draft_line(draft, edit_generation, line_editor, false),
+            }
+
+            CatalogPicker {
+                state: catalog_picker,
+                on_pick: move |item| {
+                    apply_edit(draft, edit_generation, |draft| {
+                        draft.lines.push(line_from_catalog_item(&item));
+                    });
+                    catalog_picker.set(None);
+                },
+                on_free_form: move |_| {
+                    catalog_picker.set(None);
+                    open_new_line_editor(line_editor);
+                },
             }
         }
     }
@@ -424,6 +449,33 @@ fn load_initial_draft(database: &DatabaseContext) -> Option<DocumentInput> {
             None
         }
     }
+}
+
+fn open_catalog_picker(
+    database: &DatabaseContext,
+    mut catalog_picker: Signal<Option<Vec<CatalogItem>>>,
+    mut picker_error: Signal<Option<String>>,
+) {
+    match load_active_items(database) {
+        Ok(items) => {
+            picker_error.set(None);
+            catalog_picker.set(Some(items));
+        }
+        Err(error) => picker_error.set(Some(error)),
+    }
+}
+
+/// Active items only: an inactive item never appears in the picker, while
+/// the lines it produced stay untouched (copies, not references).
+fn load_active_items(database: &DatabaseContext) -> Result<Vec<CatalogItem>, String> {
+    let database = database.as_ref().map_err(Clone::clone)?;
+    let connection = database
+        .lock()
+        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    list_active_catalog_items(&connection).map_err(|error| {
+        eprintln!("Catalog picker query failed: {error}");
+        "Impossible de charger le catalogue.".to_string()
+    })
 }
 
 fn persist_draft(database: &DatabaseContext, draft: &DocumentInput) -> Result<(), String> {

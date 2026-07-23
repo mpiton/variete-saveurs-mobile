@@ -15,7 +15,7 @@ use rusqlite::Connection;
 
 use crate::{domain::db::open_database, platform::paths::database_path};
 
-use super::{form::Form, home::Home};
+use super::{catalog::Catalog, form::Form, home::Home};
 
 const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str =
@@ -281,11 +281,6 @@ fn Preview() -> Element {
 #[component]
 fn Compose() -> Element {
     rsx! { Placeholder { title: "Composition", description: "Composition de l’envoi à venir." } }
-}
-
-#[component]
-fn Catalog() -> Element {
-    rsx! { Placeholder { title: "Catalogue", description: "Gestion du catalogue à venir." } }
 }
 
 #[component]

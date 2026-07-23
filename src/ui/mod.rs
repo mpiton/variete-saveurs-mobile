@@ -2,6 +2,7 @@
 //! lives in `domain`.
 
 mod app;
+mod catalog;
 mod components;
 mod form;
 mod home;
