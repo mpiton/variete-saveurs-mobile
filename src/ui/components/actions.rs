@@ -1,5 +1,16 @@
 use dioxus::prelude::*;
 
+use crate::domain::models::DocumentKind;
+
+/// Label of the issue action — one action (the task-20 issuance flow), one
+/// label shared by every screen that offers it.
+pub fn issue_label(kind: &DocumentKind) -> &'static str {
+    match kind {
+        DocumentKind::Quote => "Émettre le devis",
+        DocumentKind::Invoice => "Émettre la facture",
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum ButtonVariant {
     #[default]

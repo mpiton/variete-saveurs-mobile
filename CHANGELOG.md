@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Full-screen document preview (« Aperçu »): the draft (next number peeked
+  read-only, never reserved, discreet « aperçu » pill) and any issued
+  document rendered exactly in an A4 iframe `srcdoc` on the neutral
+  background, with pinch-zoom, pan and double-tap fit-to-width gestures,
+  and a contextual chrome action bar (Issue / Export-Share-Send buttons
+  staged disabled for tasks 19/20/22/26).
+- Shared `issue_label` helper and `.chrome-action-bar` style now backing
+  both the form and the preview action bars.
+
 - Catalog management screen: every item grouped by group, add/edit in a
   bottom sheet (name, euro price, unit, group, active toggle), deactivation
   instead of deletion so issued documents keep their copied lines.

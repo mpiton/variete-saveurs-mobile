@@ -635,17 +635,22 @@ input[aria-busy="true"]:disabled {
     font-weight: 700;
 }
 
-.form-action-bar {
+/* Chrome bottom action bar shared by the form and the preview; each screen
+   adds its own bleed and button sizing on top. */
+.chrome-action-bar {
     display: flex;
     gap: var(--touch-gap);
-    margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
-    margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
     padding:
         var(--space-sm)
         max(var(--space-gutter), var(--system-inset-right))
         calc(var(--space-sm) + var(--system-inset-bottom))
         max(var(--space-gutter), var(--system-inset-left));
     background: var(--color-chrome);
+}
+
+.form-action-bar {
+    margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
+    margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
 }
 
 .form-action-bar .m3-button:last-child {
@@ -1103,4 +1108,85 @@ input[aria-busy="true"]:disabled {
         padding-top: var(--space-xs);
         padding-bottom: var(--space-xs);
     }
+}
+
+/* Full-screen document preview (task 18): the A4 page lies on the neutral
+   background with no shadow; pan/zoom is a JS-driven transform on the stage,
+   so the screen bleeds to the edges of the scroll container — the negative
+   margins below mirror .screen-scroll's padding exactly and must follow it. */
+.preview-screen {
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    margin:
+        calc(-1 * var(--space-lg))
+        calc(-1 * max(var(--space-gutter), var(--system-inset-right)))
+        calc(-1 * (var(--space-lg) + var(--system-inset-bottom)))
+        calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
+}
+
+.preview-viewport {
+    position: relative;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+    background: var(--color-bg);
+    touch-action: none;
+    user-select: none;
+}
+
+.preview-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+
+.preview-frame {
+    display: block;
+    width: 210mm;
+    /* Placeholder until the gesture script measures the content height. */
+    height: 297mm;
+    border: 0;
+    /* The render holds no interactive content: gestures are handled one
+       level up, on the viewport, in a single document. */
+    pointer-events: none;
+    background: #FFFFFF;
+}
+
+.preview-pill {
+    position: absolute;
+    z-index: 1;
+    top: var(--space-sm);
+    left: 50%;
+    margin: 0;
+    padding: var(--space-xs) var(--space-md);
+    transform: translateX(-50%);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-dim);
+    color: var(--color-label);
+    font-size: var(--type-label-medium-size);
+    font-weight: 700;
+}
+
+.preview-action-bar {
+    flex: 0 0 auto;
+}
+
+.preview-action-bar .m3-button {
+    flex: 1;
+}
+
+.preview-screen--message {
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-message {
+    display: grid;
+    width: min(100%, 26rem);
+    gap: var(--space-md);
+    padding: var(--space-lg);
 }

@@ -15,7 +15,13 @@ use rusqlite::Connection;
 
 use crate::{domain::db::open_database, platform::paths::database_path};
 
-use super::{catalog::Catalog, form::Form, home::Home};
+use super::{
+    catalog::Catalog,
+    components::{Button, ButtonVariant},
+    form::Form,
+    home::Home,
+    preview::Preview,
+};
 
 const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str =
@@ -150,8 +156,8 @@ pub(super) enum Route {
         Form {},
         #[route("/fiche/:id")]
         Record { id: i64 },
-        #[route("/apercu")]
-        Preview {},
+        #[route("/apercu?:document")]
+        Preview { document: Option<i64> },
         #[route("/composition")]
         Compose {},
         #[route("/catalogue")]
@@ -166,7 +172,7 @@ impl Route {
             Self::Home {} => "Accueil",
             Self::Form {} => "Formulaire",
             Self::Record { .. } => "Fiche",
-            Self::Preview {} => "Aperçu",
+            Self::Preview { .. } => "Aperçu",
             Self::Compose {} => "Composition",
             Self::Catalog {} => "Catalogue",
             Self::Settings {} => "Réglages",
@@ -283,13 +289,22 @@ fn AppShell() -> Element {
 
 #[component]
 fn Record(id: i64) -> Element {
-    let _ = id;
-    rsx! { Placeholder { title: "Fiche", description: "Détail d’un document émis à venir." } }
-}
-
-#[component]
-fn Preview() -> Element {
-    rsx! { Placeholder { title: "Aperçu", description: "Aperçu plein écran à venir." } }
+    let navigator = use_navigator();
+    rsx! {
+        section { class: "screen",
+            div { class: "placeholder-panel",
+                h2 { "Fiche" }
+                p { "Détail d’un document émis à venir." }
+                Button {
+                    label: "Aperçu".to_string(),
+                    variant: ButtonVariant::Tonal,
+                    onclick: move |_| {
+                        navigator.push(Route::Preview { document: Some(id) });
+                    },
+                }
+            }
+        }
+    }
 }
 
 #[component]
@@ -348,7 +363,12 @@ mod tests {
             (Route::Home {}, "/", "Accueil"),
             (Route::Form {}, "/formulaire", "Formulaire"),
             (Route::Record { id: 42 }, "/fiche/42", "Fiche"),
-            (Route::Preview {}, "/apercu", "Aperçu"),
+            (Route::Preview { document: None }, "/apercu?", "Aperçu"),
+            (
+                Route::Preview { document: Some(42) },
+                "/apercu?document=42",
+                "Aperçu",
+            ),
             (Route::Compose {}, "/composition", "Composition"),
             (Route::Catalog {}, "/catalogue", "Catalogue"),
             (Route::Settings {}, "/reglages", "Réglages"),
@@ -358,5 +378,16 @@ mod tests {
             assert_eq!(route.to_string(), path);
             assert_eq!(route.title(), title);
         }
+
+        // The empty-query draft path must round-trip: the history stores the
+        // serialized route and the router re-parses it on every navigation.
+        assert_eq!(
+            "/apercu?".parse::<Route>().ok(),
+            Some(Route::Preview { document: None })
+        );
+        assert_eq!(
+            "/apercu?document=42".parse::<Route>().ok(),
+            Some(Route::Preview { document: Some(42) })
+        );
     }
 }

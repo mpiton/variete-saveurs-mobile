@@ -21,7 +21,7 @@ use super::{
     app::{DatabaseContext, OutsideInteraction, Route},
     components::{
         Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
-        OutlinedField, SegmentedButton, line_from_catalog_item,
+        OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
     },
 };
 
@@ -35,6 +35,7 @@ pub(super) fn Form() -> Element {
     let initial_database = database.clone();
     let catalog_database = database.clone();
     let suggestions_database = database.clone();
+    let preview_database = database.clone();
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
@@ -360,12 +361,23 @@ pub(super) fn Form() -> Element {
                     span { class: "total-pill__label", "Total" }
                     span { class: "total-pill__amount", "{format_eur(current.total_cents())}" }
                 }
-                footer { class: "form-action-bar",
+                footer { class: "chrome-action-bar form-action-bar",
                     Button {
                         label: "Aperçu".to_string(),
                         variant: ButtonVariant::Tonal,
                         onclick: move |_| {
-                            navigator.push(Route::Preview {});
+                            // Flush the pending auto-save first so the preview
+                            // renders the draft as just edited.
+                            let Some(current) = draft.read().clone() else {
+                                return;
+                            };
+                            match persist_draft(&preview_database, &current) {
+                                Ok(()) => {
+                                    save_error.set(None);
+                                    navigator.push(Route::Preview { document: None });
+                                }
+                                Err(error) => save_error.set(Some(error)),
+                            }
                         },
                     }
                     Button {
@@ -637,13 +649,6 @@ fn draft_title(kind: &DocumentKind) -> &'static str {
     match kind {
         DocumentKind::Quote => "Brouillon de devis",
         DocumentKind::Invoice => "Brouillon de facture",
-    }
-}
-
-fn issue_label(kind: &DocumentKind) -> &'static str {
-    match kind {
-        DocumentKind::Quote => "Émettre le devis",
-        DocumentKind::Invoice => "Émettre la facture",
     }
 }
 
