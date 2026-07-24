@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PNG export pipeline for issued documents: « Exporter » on the preview writes
+  `exports/{devis|facture}-N.pdf` (Typst) and a single stacked PNG
+  (`PdfRenderer` at ~150 dpi per the task spec, pages stacked vertically with
+  the desktop's white background and gray separators). Existing files are
+  kept (frozen documents); missing ones are regenerated, so the action is
+  also the re-export path. Exports are serialized, atomic (tmp + rename with
+  cleanup), panic-contained, and surface French errors without crashing.
+- Typst document template now handles invoices as well as quotes (FACTURE
+  header, payment terms, règlement block with IBAN, late-penalty mention for
+  professional clients, closing line) — a faithful port of the `render.rs`
+  invoice variant.
 - Debug-only reference PDF export trigger in the overflow menu (debug builds
   only): runs the Typst reference export on a worker thread with panic
   containment, announces the result or a French error via a polite status

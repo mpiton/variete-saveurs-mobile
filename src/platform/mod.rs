@@ -3,4 +3,6 @@
 
 pub mod export;
 pub mod paths;
+pub mod pdf_renderer;
+pub mod png_stack;
 pub mod share;

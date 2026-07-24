@@ -8,6 +8,6 @@ mod line_sheet;
 pub use actions::{Button, ButtonVariant, FabMenu, SegmentedButton, issue_label};
 pub use catalog_picker::{CatalogPicker, group_catalog_items, line_from_catalog_item};
 pub use documents::DocumentCard;
-pub use feedback::{BottomSheet, EmptyState, ErrorBlock};
+pub use feedback::{BottomSheet, EmptyState, ErrorBlock, Snackbar};
 pub use fields::OutlinedField;
 pub use line_sheet::{LineEditorState, LineSheet};

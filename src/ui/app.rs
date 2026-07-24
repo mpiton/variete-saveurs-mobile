@@ -216,9 +216,9 @@ fn initialize_database() -> DatabaseContext {
     Ok(Arc::new(connection))
 }
 
-// Debug-only trigger for the task 05 fidelity spike: runs the blocking Typst
-// export on a worker thread so the single-threaded UI executor never stalls.
-// Scaffolding until the production export flow (tasks 19+) wires its own UI.
+// Debug-only harness for the PDF fidelity checks (task 05 and later spot
+// checks): runs the blocking Typst export on a worker thread so the
+// single-threaded UI executor never stalls. Kept out of release builds.
 enum DebugExportStatus {
     Ready,
     Running,
