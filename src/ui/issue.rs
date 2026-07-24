@@ -139,7 +139,7 @@ pub(super) fn blocks_draft_persistence(phase: &IssuePhase) -> bool {
 
 /// Leaves the issue flow once the fiche is closed: the snackbar and the
 /// re-export block belong to the post-emission moment, not to later visits
-/// (the aperçu's « Exporter » remains the standing re-export path).
+/// (a manual re-export stays available on the fiche and the aperçu).
 pub(super) fn reset_issue_flow(mut flow: IssueFlow) {
     if matches!(&*flow.0.read(), IssuePhase::Issued(_)) {
         flow.0.set(IssuePhase::Idle);
@@ -200,6 +200,51 @@ fn run_export(document: &Document) -> (ExportPhase, Option<DocumentExport>) {
             (ExportPhase::Failed, None)
         }
     }
+}
+
+/// State of a manual export job (fiche « Exporter le PDF / PNG », aperçu
+/// « Exporter »), driven from a worker thread: a failure is a persistent
+/// block (DESIGN.md §6), a success a snackbar naming the files.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ExportJobState {
+    Ready,
+    Running,
+    Done(String),
+    Failed(String),
+}
+
+/// Manual export of an issued document; doubles as the re-export path —
+/// `export_document` keeps existing files and regenerates only the missing
+/// ones (ARCHI §4). Same worker shape as the issue chain; the phase guards
+/// the double-tap.
+pub(super) fn start_export(
+    mut state: Signal<ExportJobState, SyncStorage>,
+    input: DocumentInput,
+    number: i64,
+) {
+    if matches!(&*state.read(), ExportJobState::Running) {
+        return;
+    }
+    state.set(ExportJobState::Running);
+    std::thread::spawn(move || {
+        let outcome = catch_unwind(AssertUnwindSafe(|| export_document(&input, number)));
+        let next = match outcome {
+            Ok(Ok(export)) => {
+                ExportJobState::Done(format!("Export terminé : {}", export.files_label()))
+            }
+            Ok(Err(error)) => {
+                eprintln!("Document export failed: {error}");
+                ExportJobState::Failed(error.to_string())
+            }
+            Err(payload) => {
+                eprintln!("Document export panicked: {payload:?}");
+                ExportJobState::Failed(
+                    "Échec inattendu de l'export du document (détail dans les logs).".to_string(),
+                )
+            }
+        };
+        write_from_worker(state, |current| *current = next);
+    });
 }
 
 /// Snackbar confirmation right after the fiche appears (« Devis n° 10 émis »).

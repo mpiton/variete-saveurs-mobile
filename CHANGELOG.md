@@ -9,12 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Document sharing (ARCHI §4 « Partage »): « Partager » on the fiche and the
+  aperçu opens a bottom sheet offering the real file names (« devis-12.pdf »
+  / « devis-12.png »), then a worker re-exports any missing file
+  (`export_document` keeps existing ones) and hands its `content://` URI to
+  the Android share sheet (`ACTION_SEND` + read grant, fire-and-forget — no
+  per-channel logic, Android routes). PNG shares now advertise `image/png`
+  both in the intent and in the provider's `getType`, so targets like
+  WhatsApp render them inline instead of as raw files. A share failure
+  surfaces as a persistent French error block (DESIGN §6); dismissing the
+  sheet, the chooser or the target app leaves no state behind.
+- Manual export on the fiche: « Exporter le PDF / PNG » regenerates the
+  missing files on a worker thread (shared `ExportJobState` + `start_export`
+  next to the issue-flow plumbing) and confirms with a snackbar. The
+  aperçu's export now reports failures through the same persistent block
+  instead of a transient snackbar (DESIGN §6).
 - Issued document record (fiche, DESIGN §5): a summary card (kind + number,
   client, dates, payment terms, total, « envoyé »/« facturé » badges) with
   read-only collapsible lines, and the action stack in a sticky bottom-third
   chrome bar (Règle du Pouce). « Aperçu » opens the full-screen preview;
-  export, share, send, convert and duplicate render as disabled placeholders
-  until tasks 22–27 wire them. « Convertir en facture » only appears on an
+  send, convert and duplicate render as disabled placeholders until tasks
+  23–27 wire them. « Convertir en facture » only appears on an
   unconverted quote (derived `is_invoiced`, task 08), and a converted invoice
   discreetly references its source quote number. An issued document stays
   frozen — no edit entry point anywhere. The post-emission snackbar and the
