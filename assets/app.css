@@ -1200,3 +1200,97 @@ input[aria-busy="true"]:disabled {
     gap: var(--space-md);
     padding: var(--space-lg);
 }
+
+/* Issued document record (task 21): summary card + collapsible read-only
+   lines up top, action stack sticky in the bottom third (Règle du Pouce).
+   The sticky chrome bar reuses the form's negative-margin bleed. */
+.record-screen {
+    min-height: 100%;
+}
+
+.record-summary {
+    display: grid;
+    gap: var(--space-xs);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+}
+
+.record-summary__heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-sm);
+}
+
+.record-summary__total {
+    font-size: var(--type-title-large-size);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+/* Specificity must beat `.screen p` (0,1,1), which sets a muted color. */
+.record-summary .record-summary__client {
+    color: var(--color-ink);
+    font-size: var(--type-body-large-size);
+}
+
+.record-summary__source {
+    font-size: var(--type-body-medium-size);
+}
+
+.record-summary__badges {
+    display: flex;
+    gap: var(--touch-gap);
+    padding-top: var(--space-xs);
+}
+
+.record-lines {
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+}
+
+.record-lines summary {
+    display: flex;
+    min-height: var(--touch-target);
+    align-items: center;
+    padding: var(--space-sm) var(--space-md);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.record-lines[open] summary {
+    border-bottom: 1px solid var(--color-border-soft);
+}
+
+.record-lines .line-list {
+    padding: var(--space-md);
+}
+
+/* Read-only mirror of .line-row__main (form): same layout, no pointer
+   affordance — an issued line is never tappable (émis = figé). */
+.record-line {
+    display: grid;
+    min-height: var(--touch-target);
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 2px var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+}
+
+.record-sticky {
+    position: sticky;
+    bottom: 0;
+    margin-top: auto;
+}
+
+.record-action-bar {
+    display: grid;
+    margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
+    margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
+}

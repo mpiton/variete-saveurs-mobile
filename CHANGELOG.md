@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Issued document record (fiche, DESIGN §5): a summary card (kind + number,
+  client, dates, payment terms, total, « envoyé »/« facturé » badges) with
+  read-only collapsible lines, and the action stack in a sticky bottom-third
+  chrome bar (Règle du Pouce). « Aperçu » opens the full-screen preview;
+  export, share, send, convert and duplicate render as disabled placeholders
+  until tasks 22–27 wire them. « Convertir en facture » only appears on an
+  unconverted quote (derived `is_invoiced`, task 08), and a converted invoice
+  discreetly references its source quote number. An issued document stays
+  frozen — no edit entry point anywhere. The post-emission snackbar and the
+  « Réessayer l'export » retry move here from the app-shell placeholder.
 - End-to-end issue flow behind « Émettre » (draft form and draft preview):
   the full chain — structured validation → transactional emission (number +
   insert) → draft clear → decoupled PDF/PNG export — runs on a worker thread

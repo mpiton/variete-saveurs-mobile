@@ -8,5 +8,6 @@ mod form;
 mod home;
 mod issue;
 mod preview;
+mod record;
 
 pub use app::app;
