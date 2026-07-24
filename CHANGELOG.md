@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Debug-only reference PDF export trigger in the overflow menu (debug builds
+  only): runs the Typst reference export on a worker thread with panic
+  containment, announces the result or a French error via a polite status
+  line. Used by the task 05 fidelity verification on Android 35.
+- Share sheet right after the debug reference export: `platform::share`
+  (Intent `ACTION_SEND` over a `content://` URI) backed by
+  `ExportFileProvider`, a read-only Kotlin provider on `exports/` declared in
+  the manifest (the Dioxus build accepts neither extra resources nor extra
+  Kotlin sources, ruling out the androidx FileProvider XML).
 - Full-screen document preview (« Aperçu »): the draft (next number peeked
   read-only, never reserved, discreet « aperçu » pill) and any issued
   document rendered exactly in an A4 iframe `srcdoc` on the neutral
@@ -69,3 +78,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one tap pre-fills every client field (kind, address, email, phone, SIRET,
   billing address) and stays editable afterwards; the inline list dismisses
   on outside taps and scroll gestures and never overlays the keyboard.
+
+### Fixed
+
+- System bar insets never reached the WebView: the insets listener set on the
+  WebView was never dispatched, so the top app bar slid under the status bar
+  on physical devices. Insets are now cached from the decor view listener and
+  replayed into the WebView a few times after attach (evaluateJavascript is a
+  no-op until a page loads), keeping the chrome below the status bar.
+
+### Changed
+
+- Architecture: Typst adopted as the PDF engine (ADR 0003); `ARCHI.md §5`
+  and the export stack note now describe the
+  `DocumentInput → Typst → PDF privé → PdfRenderer → PNG → partage/email`
+  pipeline instead of the impossible WebView print design.
