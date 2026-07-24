@@ -83,8 +83,10 @@ pub fn ErrorBlock(
             }
             if !items.is_empty() {
                 ul { class: "error-block__list",
-                    for item in items {
-                        li { key: "{item}", "{item}" }
+                    // Index keys are acceptable here: items are stateless text,
+                    // and two entries can legitimately share the same message.
+                    for (index, item) in items.into_iter().enumerate() {
+                        li { key: "{index}", "{item}" }
                     }
                 }
             }

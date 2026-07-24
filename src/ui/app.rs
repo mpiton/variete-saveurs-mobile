@@ -98,6 +98,20 @@ impl AppHistory {
             update();
         }
     }
+
+    /// Pops the current entry without telling the router: used right before a
+    /// `replace`, so the replace swallows the *previous* entry as well (the
+    /// issue flow turns Home → Form → Preview into Home → Record, and Back
+    /// from the fiche reaches a live route). The browser `popstate` that
+    /// follows resolves to the already-updated position — the bridge's early
+    /// return makes it a no-op.
+    fn pop_silently(&self) {
+        if self.can_go_back() {
+            self.memory.go_back();
+            self.position.set(self.position.get() - 1);
+            let _ = self.document.eval("window.history.back()".to_string());
+        }
+    }
 }
 
 impl History for AppHistory {
@@ -269,6 +283,8 @@ fn AppShell() -> Element {
     // must NOT re-navigate: the remembered target makes the effect fire only
     // on real transitions.
     let flow_navigator = navigator;
+    let flow_history = use_context::<Rc<AppHistory>>();
+    let route_before_flow = current_route.clone();
     let issue_flow = use_context::<IssueFlow>();
     let mut last_flow_target = use_signal(|| None::<FlowTarget>);
     use_effect(move || {
@@ -287,6 +303,13 @@ fn AppShell() -> Element {
                 flow_navigator.push(Route::Form {});
             }
             FlowTarget::Record(id) => {
+                // Issuing from the draft preview: drop the preview entry too,
+                // so the replace also swallows the now-dead draft form (its
+                // draft is cleared) — Back from the fiche reaches a live
+                // route instead of « Brouillon introuvable ».
+                if matches!(route_before_flow, Route::Preview { .. }) {
+                    flow_history.pop_silently();
+                }
                 flow_navigator.replace(Route::Record { id });
             }
         }
@@ -432,15 +455,18 @@ fn Record(id: i64) -> Element {
     };
 
     // The snackbar is transient (DESIGN.md §6): auto-dismiss after a few
-    // seconds, wherever the phase mutation came from (emission or retry).
+    // seconds, and the timer only ever dismisses ITS notice — a newer one
+    // (retry result, newer issuance) survives an older timer.
     let notice_flow = issue_flow;
     use_effect(move || {
-        let has_notice =
-            matches!(&*notice_flow.0.read(), IssuePhase::Issued(state) if state.notice.is_some());
-        if has_notice {
+        let expected = match &*notice_flow.0.read() {
+            IssuePhase::Issued(state) => state.notice.clone(),
+            _ => None,
+        };
+        if let Some(expected) = expected {
             spawn(async move {
                 sleep(NOTICE_DURATION).await;
-                dismiss_notice(notice_flow);
+                dismiss_notice(notice_flow, &expected);
             });
         }
     });
@@ -541,6 +567,30 @@ mod tests {
 
         history.browser_moved_to(1);
         assert_eq!(history.current_route(), Route::Form {}.to_string());
+    }
+
+    #[test]
+    fn pop_silently_drops_the_current_entry_so_a_replace_swallows_the_previous_one() {
+        let document: Rc<dyn Document> = Rc::new(NoOpDocument);
+        let history = AppHistory::new(document);
+
+        history.push(Route::Form {}.to_string());
+        history.push(Route::Preview { document: None }.to_string());
+        assert_eq!(history.position.get(), 2);
+
+        history.pop_silently();
+        assert_eq!(history.position.get(), 1);
+        assert_eq!(history.current_route(), Route::Form {}.to_string());
+
+        // The popstate bridge landing on the revealed entry must be a no-op.
+        history.browser_moved_to(1);
+        assert_eq!(history.current_route(), Route::Form {}.to_string());
+
+        // Home → Form → Preview becomes Home → Record: Back reaches Home.
+        history.replace(Route::Record { id: 7 }.to_string());
+        assert_eq!(history.current_route(), Route::Record { id: 7 }.to_string());
+        history.browser_moved_to(0);
+        assert_eq!(history.current_route(), Route::Home {}.to_string());
     }
 
     #[test]

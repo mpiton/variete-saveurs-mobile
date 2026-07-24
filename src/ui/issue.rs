@@ -118,12 +118,23 @@ pub(super) fn retry_export(flow: IssueFlow) {
     });
 }
 
-/// Dismisses the fiche snackbar (UI thread — writes happen between renders
-/// there, like any event handler, so no retry loop is needed).
-pub(super) fn dismiss_notice(mut flow: IssueFlow) {
-    if let IssuePhase::Issued(state) = &mut *flow.0.write() {
+/// Dismisses the fiche snackbar, but only if it still shows the notice the
+/// caller scheduled its timer for — a newer notice (retry result, newer
+/// issuance) must survive an older timer (UI thread — writes happen between
+/// renders there, like any event handler, so no retry loop is needed).
+pub(super) fn dismiss_notice(mut flow: IssueFlow, expected: &str) {
+    if let IssuePhase::Issued(state) = &mut *flow.0.write()
+        && state.notice.as_deref() == Some(expected)
+    {
         state.notice = None;
     }
+}
+
+/// While the chain runs (or just completed), persisting the draft is
+/// forbidden: the worker clears it right after commit, and a late autosave
+/// would resurrect the just-issued draft — offered again, issued twice.
+pub(super) fn blocks_draft_persistence(phase: &IssuePhase) -> bool {
+    matches!(phase, IssuePhase::Running | IssuePhase::Issued(_))
 }
 
 /// Leaves the issue flow once the fiche is closed: the snackbar and the
@@ -256,8 +267,8 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::{
-        DatabaseContext, DocumentField, IssueFailure, field_error, issue_draft, issued_notice,
-        line_has_error,
+        DatabaseContext, DocumentField, IssueFailure, IssuePhase, blocks_draft_persistence,
+        field_error, issue_draft, issued_notice, line_has_error,
     };
     use crate::domain::{
         db::{get_document, list_documents, load_draft, open_database, save_draft},
@@ -407,5 +418,25 @@ mod tests {
         assert!(!line_has_error(&errors, 0));
         assert!(line_has_error(&errors, 1));
         assert!(!line_has_error(&errors, 2));
+    }
+
+    #[test]
+    fn draft_persistence_is_blocked_only_while_the_chain_runs_or_just_committed() {
+        assert!(!blocks_draft_persistence(&IssuePhase::Idle));
+        assert!(blocks_draft_persistence(&IssuePhase::Running));
+        assert!(!blocks_draft_persistence(&IssuePhase::Invalid(Vec::new())));
+        assert!(!blocks_draft_persistence(&IssuePhase::Failed(
+            "erreur".to_string()
+        )));
+
+        let (_file, database) = temp_database();
+        let document =
+            issue_draft(&database, &sample_input(DocumentKind::Quote)).expect("issue quote");
+        let issued = IssuePhase::Issued(Box::new(super::IssuedState {
+            document,
+            export: super::ExportPhase::Running,
+            notice: None,
+        }));
+        assert!(blocks_draft_persistence(&issued));
     }
 }

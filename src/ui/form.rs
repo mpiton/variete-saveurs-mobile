@@ -24,7 +24,9 @@ use super::{
         Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
         OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
     },
-    issue::{IssueFlow, IssuePhase, field_error, line_has_error, start_issue},
+    issue::{
+        IssueFlow, IssuePhase, blocks_draft_persistence, field_error, line_has_error, start_issue,
+    },
 };
 
 const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -52,7 +54,10 @@ pub(super) fn Form() -> Element {
     let mut suggestion_search = use_signal(|| None::<String>);
 
     // Debounced auto-save: every edit bumps `edit_generation`; the save only
-    // runs once the generation has been stable for AUTOSAVE_DEBOUNCE.
+    // runs once the generation has been stable for AUTOSAVE_DEBOUNCE — and
+    // never while an issue is in flight, since the worker clears the draft
+    // right after commit and a late save would resurrect it.
+    let autosave_flow = issue_flow;
     use_effect(move || {
         let generation = edit_generation();
         if generation == 0 {
@@ -62,6 +67,9 @@ pub(super) fn Form() -> Element {
         spawn(async move {
             sleep(AUTOSAVE_DEBOUNCE).await;
             if *edit_generation.peek() != generation {
+                return;
+            }
+            if blocks_draft_persistence(&autosave_flow.0.peek()) {
                 return;
             }
             let snapshot = draft.read().clone();
@@ -427,6 +435,11 @@ pub(super) fn Form() -> Element {
                         label: "Aperçu".to_string(),
                         variant: ButtonVariant::Tonal,
                         onclick: move |_| {
+                            // An issue in flight owns the draft: flushing now
+                            // would resurrect it after the worker clears it.
+                            if blocks_draft_persistence(&issue_flow.0.peek()) {
+                                return;
+                            }
                             // Flush the pending auto-save first so the preview
                             // renders the draft as just edited.
                             let Some(current) = draft.read().clone() else {
