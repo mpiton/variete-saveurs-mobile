@@ -2,7 +2,10 @@ use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+    },
 };
 
 use dioxus::{
@@ -13,7 +16,10 @@ use dioxus::{
 };
 use rusqlite::Connection;
 
-use crate::{domain::db::open_database, platform::paths::database_path};
+use crate::{
+    domain::db::open_database,
+    platform::{export::generate_reference_export, paths::database_path},
+};
 
 use super::{
     catalog::Catalog,
@@ -210,6 +216,17 @@ fn initialize_database() -> DatabaseContext {
     Ok(Arc::new(connection))
 }
 
+// Debug-only trigger for the task 05 fidelity spike: runs the blocking Typst
+// export on a worker thread so the single-threaded UI executor never stalls.
+// Scaffolding until the production export flow (tasks 19+) wires its own UI.
+enum DebugExportStatus {
+    Ready,
+    Running,
+    Finished(String),
+}
+
+static DEBUG_EXPORT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
 #[component]
 fn AppShell() -> Element {
     let current_route = use_route::<Route>();
@@ -219,6 +236,7 @@ fn AppShell() -> Element {
     let history = use_context::<Rc<AppHistory>>();
     let mut menu_open = use_signal(|| false);
     let mut outside_interaction = use_context_provider(|| OutsideInteraction(Signal::new(0_u64)));
+    let mut debug_export_status = use_signal_sync(|| DebugExportStatus::Ready);
 
     use_future(move || {
         let history = history.clone();
@@ -230,6 +248,12 @@ fn AppShell() -> Element {
             }
         }
     });
+
+    let (debug_export_running, debug_export_message) = match &*debug_export_status.read() {
+        DebugExportStatus::Ready => (false, None),
+        DebugExportStatus::Running => (true, Some("Génération du PDF en cours…".to_string())),
+        DebugExportStatus::Finished(message) => (false, Some(message.clone())),
+    };
 
     rsx! {
         div { class: "app-shell",
@@ -273,6 +297,57 @@ fn AppShell() -> Element {
                             to: Route::Settings {},
                             onclick: move |_| menu_open.set(false),
                             "Réglages"
+                        }
+                        if cfg!(debug_assertions) {
+                            button {
+                                r#type: "button",
+                                role: "menuitem",
+                                disabled: debug_export_running,
+                                onclick: move |_| {
+                                    if DEBUG_EXPORT_IN_PROGRESS.swap(true, AtomicOrdering::SeqCst) {
+                                        return;
+                                    }
+                                    debug_export_status.set(DebugExportStatus::Running);
+                                    let mut worker_status = debug_export_status;
+                                    std::thread::spawn(move || {
+                                        let outcome =
+                                            std::panic::catch_unwind(generate_reference_export);
+                                        let next = match outcome {
+                                            Ok(Ok(export)) => DebugExportStatus::Finished(format!(
+                                                "PDF de {} pages généré en {} ms : {} (HTML : {})",
+                                                export.pages,
+                                                export.elapsed.as_millis(),
+                                                export.pdf_path.display(),
+                                                export.html_path.display(),
+                                            )),
+                                            Ok(Err(error)) => {
+                                                eprintln!("Debug reference export failed: {error}");
+                                                DebugExportStatus::Finished(error.to_string())
+                                            }
+                                            Err(payload) => {
+                                                eprintln!(
+                                                    "Debug reference export panicked: {payload:?}"
+                                                );
+                                                DebugExportStatus::Finished(
+                                                    "Échec inattendu de la génération du PDF (détail dans les logs)."
+                                                        .to_string(),
+                                                )
+                                            }
+                                        };
+                                        DEBUG_EXPORT_IN_PROGRESS
+                                            .store(false, AtomicOrdering::SeqCst);
+                                        worker_status.set(next);
+                                    });
+                                },
+                                if debug_export_running {
+                                    "Génération…"
+                                } else {
+                                    "Générer le PDF de référence"
+                                }
+                            }
+                            if let Some(message) = &debug_export_message {
+                                p { role: "status", aria_live: "polite", "{message}" }
+                            }
                         }
                     }
                 }
