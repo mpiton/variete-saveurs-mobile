@@ -14,6 +14,14 @@ impl DocumentKind {
             Self::Invoice => "invoice",
         }
     }
+
+    /// French display label (« Devis »/« Facture ») for screens and snackbars.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Quote => "Devis",
+            Self::Invoice => "Facture",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -105,6 +113,12 @@ pub struct CatalogItem {
 #[cfg(test)]
 mod tests {
     use super::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput};
+
+    #[test]
+    fn document_kind_label_is_the_french_display_name() {
+        assert_eq!(DocumentKind::Quote.label(), "Devis");
+        assert_eq!(DocumentKind::Invoice.label(), "Facture");
+    }
 
     #[test]
     fn totals_lines_in_cents() {

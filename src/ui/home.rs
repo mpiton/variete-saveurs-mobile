@@ -297,10 +297,7 @@ fn blank_draft(kind: DocumentKind) -> DocumentInput {
 }
 
 fn document_kind_label(kind: &DocumentKind) -> String {
-    match kind {
-        DocumentKind::Quote => "Devis".to_string(),
-        DocumentKind::Invoice => "Facture".to_string(),
-    }
+    kind.label().to_string()
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ mod catalog;
 mod components;
 mod form;
 mod home;
+mod issue;
 mod preview;
 
 pub use app::app;

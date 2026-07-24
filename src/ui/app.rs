@@ -6,6 +6,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering as AtomicOrdering},
     },
+    time::Duration,
 };
 
 use dioxus::{
@@ -15,17 +16,19 @@ use dioxus::{
     router::components::HistoryProvider,
 };
 use rusqlite::Connection;
+use tokio::time::sleep;
 
 use crate::{
-    domain::db::open_database,
+    domain::{db::open_database, models::Document as DomainDocument},
     platform::{export::generate_reference_export, paths::database_path, share::share_file},
 };
 
 use super::{
     catalog::Catalog,
-    components::{Button, ButtonVariant},
+    components::{Button, ButtonVariant, ErrorBlock, Snackbar},
     form::Form,
     home::Home,
+    issue::{ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow, retry_export},
     preview::Preview,
 };
 
@@ -93,6 +96,20 @@ impl AppHistory {
         self.position.set(position);
         if let Some(update) = self.updater.borrow().as_ref() {
             update();
+        }
+    }
+
+    /// Pops the current entry without telling the router: used right before a
+    /// `replace`, so the replace swallows the *previous* entry as well (the
+    /// issue flow turns Home → Form → Preview into Home → Record, and Back
+    /// from the fiche reaches a live route). The browser `popstate` that
+    /// follows resolves to the already-updated position — the bridge's early
+    /// return makes it a no-op.
+    fn pop_silently(&self) {
+        if self.can_go_back() {
+            self.memory.go_back();
+            self.position.set(self.position.get() - 1);
+            let _ = self.document.eval("window.history.back()".to_string());
         }
     }
 }
@@ -188,6 +205,8 @@ impl Route {
 
 pub fn app() -> Element {
     let _database = use_context_provider(initialize_database);
+    let issue_flow = use_signal_sync(|| IssuePhase::Idle);
+    use_context_provider(move || IssueFlow(issue_flow));
     let history = use_hook(|| Rc::new(AppHistory::new(document::document())));
     let history_context = history.clone();
     use_context_provider(move || history_context);
@@ -227,6 +246,13 @@ enum DebugExportStatus {
 
 static DEBUG_EXPORT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
+#[derive(Clone, Copy, PartialEq)]
+enum FlowTarget {
+    Stay,
+    Form,
+    Record(i64),
+}
+
 #[component]
 fn AppShell() -> Element {
     let current_route = use_route::<Route>();
@@ -245,6 +271,46 @@ fn AppShell() -> Element {
             while let Ok(position) = back_events.recv::<i32>().await {
                 history.browser_moved_to(position);
                 menu_open.set(false);
+            }
+        }
+    });
+
+    // Issue flow navigation: the worker thread publishes phases, this turns
+    // phase TRANSITIONS into routes — issued → the fiche (replaces the stale
+    // draft screen: back lands on a live route, not on « Brouillon
+    // introuvable »), invalid/failed → the form (the only screen rendering
+    // those errors). Later mutations inside `Issued` (export retry, notice)
+    // must NOT re-navigate: the remembered target makes the effect fire only
+    // on real transitions.
+    let flow_navigator = navigator;
+    let flow_history = use_context::<Rc<AppHistory>>();
+    let route_before_flow = current_route.clone();
+    let issue_flow = use_context::<IssueFlow>();
+    let mut last_flow_target = use_signal(|| None::<FlowTarget>);
+    use_effect(move || {
+        let target = match &*issue_flow.0.read() {
+            IssuePhase::Idle | IssuePhase::Running => FlowTarget::Stay,
+            IssuePhase::Invalid(_) | IssuePhase::Failed(_) => FlowTarget::Form,
+            IssuePhase::Issued(state) => FlowTarget::Record(state.document.id),
+        };
+        if last_flow_target.peek().as_ref() == Some(&target) {
+            return;
+        }
+        last_flow_target.set(Some(target));
+        match target {
+            FlowTarget::Stay => {}
+            FlowTarget::Form => {
+                flow_navigator.push(Route::Form {});
+            }
+            FlowTarget::Record(id) => {
+                // Issuing from the draft preview: drop the preview entry too,
+                // so the replace also swallows the now-dead draft form (its
+                // draft is cleared) — Back from the fiche reaches a live
+                // route instead of « Brouillon introuvable ».
+                if matches!(route_before_flow, Route::Preview { .. }) {
+                    flow_history.pop_silently();
+                }
+                flow_navigator.replace(Route::Record { id });
             }
         }
     });
@@ -373,11 +439,65 @@ fn AppShell() -> Element {
 #[component]
 fn Record(id: i64) -> Element {
     let navigator = use_navigator();
+    let issue_flow = use_context::<IssueFlow>();
+    // Post-issue state published by the flow: the fiche confirms the emission
+    // (snackbar) and carries the re-export path when the PDF failed (ARCHI §4
+    // — the number is never rolled back after commit).
+    let (issued_here, title, notice, export_running, export_failed) = match &*issue_flow.0.read() {
+        IssuePhase::Issued(state) if state.document.id == id => (
+            true,
+            document_title(&state.document),
+            state.notice.clone(),
+            state.export == ExportPhase::Running,
+            state.export == ExportPhase::Failed,
+        ),
+        _ => (false, "Fiche".to_string(), None, false, false),
+    };
+
+    // The snackbar is transient (DESIGN.md §6): auto-dismiss after a few
+    // seconds, and the timer only ever dismisses ITS notice — a newer one
+    // (retry result, newer issuance) survives an older timer.
+    let notice_flow = issue_flow;
+    use_effect(move || {
+        let expected = match &*notice_flow.0.read() {
+            IssuePhase::Issued(state) => state.notice.clone(),
+            _ => None,
+        };
+        if let Some(expected) = expected {
+            spawn(async move {
+                sleep(NOTICE_DURATION).await;
+                dismiss_notice(notice_flow, &expected);
+            });
+        }
+    });
+
+    // Leaving the fiche ends the post-emission moment: no stale snackbar or
+    // retry block on later visits (the aperçu's « Exporter » stays the
+    // standing re-export path).
+    let reset_flow = issue_flow;
+    use_drop(move || reset_issue_flow(reset_flow));
+
     rsx! {
         section { class: "screen",
             div { class: "placeholder-panel",
-                h2 { "Fiche" }
-                p { "Détail d’un document émis à venir." }
+                h2 { "{title}" }
+                if !issued_here {
+                    p { "Détail d’un document émis à venir." }
+                }
+                if export_running {
+                    p { role: "status", aria_live: "polite", "Génération du PDF en cours…" }
+                }
+                if export_failed {
+                    ErrorBlock {
+                        title: "PDF non généré".to_string(),
+                        message: "Le document est bien émis et son numéro est conservé. Réessayez l’export.".to_string(),
+                    }
+                    Button {
+                        label: "Réessayer l’export".to_string(),
+                        variant: ButtonVariant::Tonal,
+                        onclick: move |_| retry_export(issue_flow),
+                    }
+                }
                 Button {
                     label: "Aperçu".to_string(),
                     variant: ButtonVariant::Tonal,
@@ -386,8 +506,17 @@ fn Record(id: i64) -> Element {
                     },
                 }
             }
+            if let Some(message) = notice {
+                Snackbar { message }
+            }
         }
     }
+}
+
+const NOTICE_DURATION: Duration = Duration::from_secs(4);
+
+fn document_title(document: &DomainDocument) -> String {
+    format!("{} n° {}", document.input.kind.label(), document.number)
 }
 
 #[component]
@@ -438,6 +567,30 @@ mod tests {
 
         history.browser_moved_to(1);
         assert_eq!(history.current_route(), Route::Form {}.to_string());
+    }
+
+    #[test]
+    fn pop_silently_drops_the_current_entry_so_a_replace_swallows_the_previous_one() {
+        let document: Rc<dyn Document> = Rc::new(NoOpDocument);
+        let history = AppHistory::new(document);
+
+        history.push(Route::Form {}.to_string());
+        history.push(Route::Preview { document: None }.to_string());
+        assert_eq!(history.position.get(), 2);
+
+        history.pop_silently();
+        assert_eq!(history.position.get(), 1);
+        assert_eq!(history.current_route(), Route::Form {}.to_string());
+
+        // The popstate bridge landing on the revealed entry must be a no-op.
+        history.browser_moved_to(1);
+        assert_eq!(history.current_route(), Route::Form {}.to_string());
+
+        // Home → Form → Preview becomes Home → Record: Back reaches Home.
+        history.replace(Route::Record { id: 7 }.to_string());
+        assert_eq!(history.current_route(), Route::Record { id: 7 }.to_string());
+        history.browser_moved_to(0);
+        assert_eq!(history.current_route(), Route::Home {}.to_string());
     }
 
     #[test]
