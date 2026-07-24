@@ -73,3 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one tap pre-fills every client field (kind, address, email, phone, SIRET,
   billing address) and stays editable afterwards; the inline list dismisses
   on outside taps and scroll gestures and never overlays the keyboard.
+
+### Fixed
+
+- System bar insets never reached the WebView: the insets listener set on the
+  WebView was never dispatched, so the top app bar slid under the status bar
+  on physical devices. Insets are now cached from the decor view listener and
+  replayed into the WebView a few times after attach (evaluateJavascript is a
+  no-op until a page loads), keeping the chrome below the status bar.

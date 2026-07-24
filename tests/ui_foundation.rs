@@ -127,8 +127,10 @@ fn android_updates_font_scale_without_recreating_the_activity() {
 #[test]
 fn android_replays_initial_insets_after_the_webview_attaches() {
     let activity = project_file("android/MainActivity.kt");
+    // Insets are cached from the decor view (reliable dispatch on every
+    // device) and replayed into the WebView once it attaches.
+    assert!(activity.contains("setOnApplyWindowInsetsListener(window.decorView)"));
     assert!(activity.contains("webView.post"));
-    assert!(activity.contains("ViewCompat.requestApplyInsets(webView)"));
 }
 
 #[test]
