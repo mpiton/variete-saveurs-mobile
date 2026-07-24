@@ -10,7 +10,7 @@
 #let serif = "Liberation Serif"
 #let sans = "Liberation Sans"
 
-#set document(title: "DEVIS n° " + str(data.number) + " - Variété de Saveurs")
+#set document(title: data.title + " n° " + str(data.number) + " - Variété de Saveurs")
 #set page(
   paper: "a4",
   margin: (top: 10mm, right: 10mm, bottom: 14mm, left: 10mm),
@@ -37,15 +37,19 @@
     #text(font: serif, size: 11.25pt)[Variété de Saveurs]
   ],
   align(right)[
-    #text(font: serif, size: 25.5pt, weight: "bold", fill: red, tracking: 2.25pt)[DEVIS]
+    #text(font: serif, size: 25.5pt, weight: "bold", fill: red, tracking: 2.25pt)[#data.title]
     #v(2pt)
-    #text(font: serif, size: 9pt, style: "italic", fill: gray)[Offre gratuite et sans engagement]
+    #text(font: serif, size: 9pt, style: "italic", fill: gray)[#data.nature]
     #v(4.5pt)
     #text(size: 8.25pt)[
-      *N° de devis :* #data.number \
+      *#data.number-label :* #data.number \
       *Date d'émission :* #data.issue-date \
       *Date de l'événement :* #data.event-date \
-      *Validité de l'offre :* jusqu'au #data.validity-end
+      #if data.quote [
+        *Validité de l'offre :* jusqu'au #data.validity-end
+      ] else [
+        *Conditions de paiement :* #data.payment-terms
+      ]
     ]
   ],
 )
@@ -162,7 +166,7 @@
       #grid(
         columns: (1fr, auto),
         column-gutter: 8pt,
-        text(font: serif, size: 10.5pt, weight: "bold", fill: red)[Total du devis],
+        text(font: serif, size: 10.5pt, weight: "bold", fill: red)[#data.total-label],
         text(font: serif, size: 10.5pt, weight: "bold", fill: red)[#data.total],
       )
     ]
@@ -170,30 +174,49 @@
 ]
 
 #v(6.75pt)
-#card([
-  #text(font: serif, size: 9.4pt, weight: "bold", fill: red)[Conditions]
-  #v(3pt)
-  - *Offre valable jusqu'au :* #data.validity-end.
-  - *Règlement :* par virement la veille de la récupération (#data.event-date), ou en espèces le jour même.
-  - Établissement du présent devis : *gratuit*.
-])
+#if data.quote [
+  #card([
+    #text(font: serif, size: 9.4pt, weight: "bold", fill: red)[Conditions]
+    #v(3pt)
+    - *Offre valable jusqu'au :* #data.validity-end.
+    - *Règlement :* par virement la veille de la récupération (#data.event-date), ou en espèces le jour même.
+    - Établissement du présent devis : *gratuit*.
+  ])
 
-#v(6.75pt)
-*Devis à retourner daté et signé, reçu avant exécution de la prestation.*
-#v(4.5pt)
-#grid(
-  columns: (1fr, 1fr),
-  column-gutter: 12pt,
-  block(width: 100%, height: 45pt, stroke: 0.75pt + gold, radius: 3pt, inset: 7.5pt)[
-    #text(font: serif, size: 9pt, weight: "bold", fill: red)[L'émetteur] \
-    Variété de Saveurs \
-    #text(size: 7.5pt, style: "italic", fill: gray)[Date et signature :]
-  ],
-  block(width: 100%, height: 45pt, stroke: 0.75pt + gold, radius: 3pt, inset: 7.5pt)[
-    #text(font: serif, size: 9pt, weight: "bold", fill: red)[Le client] \
-    #text(size: 7.5pt, style: "italic", fill: gray)[Mention manuscrite « Bon pour accord », date et signature :]
-  ],
-)
+  #v(6.75pt)
+  *Devis à retourner daté et signé, reçu avant exécution de la prestation.*
+  #v(4.5pt)
+  #grid(
+    columns: (1fr, 1fr),
+    column-gutter: 12pt,
+    block(width: 100%, height: 45pt, stroke: 0.75pt + gold, radius: 3pt, inset: 7.5pt)[
+      #text(font: serif, size: 9pt, weight: "bold", fill: red)[L'émetteur] \
+      Variété de Saveurs \
+      #text(size: 7.5pt, style: "italic", fill: gray)[Date et signature :]
+    ],
+    block(width: 100%, height: 45pt, stroke: 0.75pt + gold, radius: 3pt, inset: 7.5pt)[
+      #text(font: serif, size: 9pt, weight: "bold", fill: red)[Le client] \
+      #text(size: 7.5pt, style: "italic", fill: gray)[Mention manuscrite « Bon pour accord », date et signature :]
+    ],
+  )
+] else [
+  #card([
+    #text(font: serif, size: 9.4pt, weight: "bold", fill: red)[Règlement]
+    #v(3pt)
+    *Montant à régler :* #data.total \
+    *Échéance :* #data.event-date \
+    *Conditions de paiement :* #data.payment-terms. \
+    *Moyens de paiement :* virement bancaire ou espèces. \
+    *IBAN :* FR76 4061 8804 4500 0405 9333 017 (Variété de Saveurs)
+    #if data.professional [
+      #v(3pt)
+      #text(size: 7.5pt, fill: gray)[Pénalités de retard : taux d'intérêt de la BCE majoré de 10 points ; indemnité forfaitaire pour frais de recouvrement : 40 €. Pas d'escompte pour paiement anticipé.]
+    ]
+  ])
+
+  #v(6.75pt)
+  Nous restons à votre disposition pour toute question — merci encore de votre confiance.
+]
 
 #v(6.75pt)
 #line(length: 100%, stroke: 0.75pt + gold)

@@ -10,14 +10,15 @@ use rusqlite::Connection;
 
 use crate::domain::{
     db::{get_document, load_draft},
-    models::DocumentKind,
+    models::{DocumentInput, DocumentKind},
     numbering::next_number,
     render::render_document_html,
 };
+use crate::platform::export::export_document;
 
 use super::{
     app::DatabaseContext,
-    components::{Button, ButtonVariant, ErrorBlock, issue_label},
+    components::{Button, ButtonVariant, ErrorBlock, Snackbar, issue_label},
 };
 
 const PREVIEW_GESTURES: &str = include_str!("preview_gestures.js");
@@ -36,6 +37,14 @@ pub(super) struct PreviewData {
     pub source: PreviewSource,
     pub kind: DocumentKind,
     pub number: i64,
+    pub input: DocumentInput,
+}
+
+/// State of the issued-document export job, driven from a worker thread.
+enum ExportState {
+    Ready,
+    Running,
+    Done(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,8 +74,9 @@ pub(super) fn load_preview(
             Ok(PreviewData {
                 html,
                 source: PreviewSource::Issued,
-                kind: document.input.kind,
+                kind: document.input.kind.clone(),
                 number: document.number,
+                input: document.input,
             })
         }
         None => {
@@ -84,8 +94,9 @@ pub(super) fn load_preview(
             Ok(PreviewData {
                 html,
                 source: PreviewSource::Draft,
-                kind: input.kind,
+                kind: input.kind.clone(),
                 number,
+                input,
             })
         }
     }
@@ -95,6 +106,7 @@ pub(super) fn load_preview(
 pub(super) fn Preview(document: Option<i64>) -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
+    let mut export_state = use_signal_sync(|| ExportState::Ready);
 
     // Loaded synchronously in the body: this screen subscribes to no signal,
     // so the query + render run once per mount or route-param change.
@@ -119,6 +131,13 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
         }
         Ok(data) => {
             let draft = data.source == PreviewSource::Draft;
+            let (export_running, export_message) = match &*export_state.read() {
+                ExportState::Ready => (false, None),
+                ExportState::Running => (true, None),
+                ExportState::Done(message) => (false, Some(message.clone())),
+            };
+            let export_input = data.input.clone();
+            let export_number = data.number;
             rsx! {
                 section { class: "preview-screen",
                     div {
@@ -155,9 +174,53 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                             Button {
                                 label: "Exporter".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Branché sur l’export PDF/PNG dans la tâche 19.
-                                disabled: true,
-                                onclick: move |_| {},
+                                loading: export_running,
+                                onclick: move |_| {
+                                    if matches!(&*export_state.peek(), ExportState::Running) {
+                                        return;
+                                    }
+                                    export_state.set(ExportState::Running);
+                                    let mut worker_state = export_state;
+                                    let input = export_input.clone();
+                                    std::thread::spawn(move || {
+                                        let outcome = std::panic::catch_unwind(
+                                            std::panic::AssertUnwindSafe(|| {
+                                                export_document(&input, export_number)
+                                            }),
+                                        );
+                                        let next = match outcome {
+                                            Ok(Ok(export)) => ExportState::Done(format!(
+                                                "Export terminé : {} et {}",
+                                                file_label(&export.pdf_path),
+                                                file_label(&export.png_path),
+                                            )),
+                                            Ok(Err(error)) => {
+                                                eprintln!("Document export failed: {error}");
+                                                ExportState::Done(error.to_string())
+                                            }
+                                            Err(payload) => {
+                                                eprintln!("Document export panicked: {payload:?}");
+                                                ExportState::Done(
+                                                    "Échec inattendu de l'export du document (détail dans les logs)."
+                                                        .to_string(),
+                                                )
+                                            }
+                                        };
+                                        // The write can race a render holding a
+                                        // read borrow; retry briefly, then give up
+                                        // (the screen may also be gone — the files
+                                        // are written either way).
+                                        for _ in 0..10 {
+                                            if let Ok(mut guard) = worker_state.try_write() {
+                                                *guard = next;
+                                                return;
+                                            }
+                                            std::thread::sleep(
+                                                std::time::Duration::from_millis(50),
+                                            );
+                                        }
+                                    });
+                                },
                             }
                             Button {
                                 label: "Partager".to_string(),
@@ -175,10 +238,19 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                             }
                         }
                     }
+                    if let Some(message) = export_message {
+                        Snackbar { message }
+                    }
                 }
             }
         }
     }
+}
+
+fn file_label(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 fn load_from_context(

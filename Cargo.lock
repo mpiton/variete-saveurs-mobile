@@ -931,6 +931,7 @@ dependencies = [
  "chrono",
  "dioxus",
  "html-escape",
+ "image",
  "jni 0.21.1",
  "ndk-context",
  "rusqlite",

@@ -19,6 +19,8 @@ use crate::domain::money::format_eur;
 use crate::domain::render::render_document_html;
 
 use super::paths::{self, PathError};
+use super::pdf_renderer::{PdfRenderError, render_pdf_to_pngs};
+use super::png_stack::{PngStackError, stack_pages_vertically};
 
 const TEMPLATE: &str = include_str!("../../templates/document.typ");
 const LOGO: &[u8] = include_bytes!("../../templates/logo.png");
@@ -43,6 +45,78 @@ pub struct ReferenceExport {
     pub elapsed: Duration,
 }
 
+#[derive(Debug)]
+pub struct DocumentExport {
+    pub pdf_path: PathBuf,
+    pub png_path: PathBuf,
+}
+
+/// Exports an issued document as `{devis|facture}-{n}.pdf` and `.png` under
+/// `exports/` (ARCHI §4). Existing files are kept as-is (issued documents are
+/// frozen); only missing files are regenerated, so the aperçu's « Exporter »
+/// action doubles as the re-export path.
+pub fn export_document(input: &DocumentInput, number: i64) -> Result<DocumentExport, ExportError> {
+    // ponytail: one export at a time (reference or document); revisit only if
+    // production needs parallel jobs.
+    let _guard = EXPORT_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let exports = paths::exports_dir()?;
+    fs::create_dir_all(&exports).map_err(|source| storage_error(&exports, source))?;
+    export_document_in(&exports, input, number, &render_pdf_pages)
+}
+
+fn render_pdf_pages(pdf_path: &Path) -> Result<Vec<Vec<u8>>, ExportError> {
+    render_pdf_to_pngs(pdf_path).map_err(ExportError::Renderer)
+}
+
+/// Injected PDF rasterizer so the export orchestration stays host-testable
+/// (production: `render_pdf_to_pngs`; tests: fakes).
+type PageRenderer = dyn Fn(&Path) -> Result<Vec<Vec<u8>>, ExportError>;
+
+fn export_document_in(
+    exports: &Path,
+    input: &DocumentInput,
+    number: i64,
+    render_pages: &PageRenderer,
+) -> Result<DocumentExport, ExportError> {
+    let stem = export_stem(&input.kind, number);
+    let pdf_path = exports.join(format!("{stem}.pdf"));
+    let png_path = exports.join(format!("{stem}.png"));
+
+    if !pdf_path.exists() {
+        let pdf = compile_pdf(input, number)?;
+        write_file_atomic(&pdf_path, &pdf.bytes)?;
+    }
+    if !png_path.exists() {
+        let pages = render_pages(&pdf_path)?;
+        let png = match pages.as_slice() {
+            [] => return Err(PdfRenderError::NoPages.into()),
+            [single] => single.clone(),
+            many => stack_pages_vertically(many)?,
+        };
+        write_file_atomic(&png_path, &png)?;
+    }
+
+    Ok(DocumentExport { pdf_path, png_path })
+}
+
+fn export_stem(kind: &DocumentKind, number: i64) -> String {
+    format!("{}-{number}", kind_label(kind))
+}
+
+fn write_file_atomic(path: &Path, bytes: &[u8]) -> Result<(), ExportError> {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = path.with_file_name(format!("{name}.tmp"));
+    let result = write_file(&tmp, bytes)
+        .and_then(|()| fs::rename(&tmp, path).map_err(|source| storage_error(path, source)));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
 #[derive(Debug, Error)]
 pub enum ExportError {
     #[error(transparent)]
@@ -51,6 +125,10 @@ pub enum ExportError {
     Data(#[source] serde_json::Error),
     #[error("Impossible de générer le document PDF.")]
     Typst(#[source] TypstFailure),
+    #[error(transparent)]
+    Renderer(#[from] PdfRenderError),
+    #[error(transparent)]
+    Png(#[from] PngStackError),
     #[error("Impossible d'écrire le fichier {path} dans le stockage privé.")]
     Write {
         path: String,
@@ -90,7 +168,11 @@ struct CompiledPdf {
 }
 
 fn compile_reference_pdf(input: &DocumentInput) -> Result<CompiledPdf, ExportError> {
-    let data = TemplateData::new(input);
+    compile_pdf(input, REFERENCE_NUMBER)
+}
+
+fn compile_pdf(input: &DocumentInput, number: i64) -> Result<CompiledPdf, ExportError> {
+    let data = TemplateData::new(input, number);
     let json = serde_json::to_vec(&data).map_err(ExportError::Data)?;
     let world = EmbeddedWorld::new(json)?;
     let compiled = typst::compile(&world);
@@ -367,25 +449,61 @@ fn embedded_id(path: &str) -> Result<FileId, ExportError> {
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
 struct TemplateData {
+    quote: bool,
+    title: &'static str,
+    nature: &'static str,
+    number_label: &'static str,
     number: i64,
     issue_date: String,
     event_date: String,
     validity_end: String,
+    payment_terms: String,
     total: String,
+    total_label: String,
+    professional: bool,
     client: TemplateClient,
     groups: Vec<TemplateGroup>,
 }
 
+/// French filename label for the document kind (« devis »/« facture »).
+fn kind_label(kind: &DocumentKind) -> &'static str {
+    match kind {
+        DocumentKind::Quote => "devis",
+        DocumentKind::Invoice => "facture",
+    }
+}
+
 impl TemplateData {
-    fn new(input: &DocumentInput) -> Self {
+    fn new(input: &DocumentInput, number: i64) -> Self {
+        let is_quote = matches!(input.kind, DocumentKind::Quote);
+        let event_date = format_date(&input.event_date);
         Self {
-            number: REFERENCE_NUMBER,
+            quote: is_quote,
+            title: if is_quote { "DEVIS" } else { "FACTURE" },
+            nature: if is_quote {
+                "Offre gratuite et sans engagement"
+            } else {
+                "Merci de votre confiance"
+            },
+            number_label: if is_quote {
+                "N° de devis"
+            } else {
+                "N° de facture"
+            },
+            number,
             issue_date: format_date(&input.issue_date),
-            event_date: format_date(&input.event_date),
             validity_end: validity_end(&input.issue_date),
+            payment_terms: input.payment_terms.clone(),
             total: format_eur(input.total_cents()),
+            total_label: if is_quote {
+                "Total du devis".to_string()
+            } else {
+                format!("Total net à payer avant le {event_date}")
+            },
+            professional: matches!(input.client.kind, ClientKind::Professional),
             client: TemplateClient::from(&input.client),
             groups: template_groups(input),
+            event_date,
         }
     }
 }
@@ -522,9 +640,12 @@ mod tests {
     use std::fs;
 
     use super::{
-        MAX_PUBLISHED_GENERATIONS, compile_reference_pdf, generation_order, generation_timestamp,
-        publish_generation, reference_document,
+        ExportError, MAX_PUBLISHED_GENERATIONS, PdfRenderError, compile_pdf, compile_reference_pdf,
+        export_document_in, generation_order, generation_timestamp, publish_generation,
+        reference_document,
     };
+    use crate::domain::models::{ClientKind, DocumentKind};
+    use crate::platform::png_stack::PAGE_SEPARATOR_HEIGHT;
 
     #[test]
     fn compiles_reference_document_to_multi_page_pdf() {
@@ -534,6 +655,29 @@ mod tests {
 
         assert!(pdf.bytes.starts_with(b"%PDF-"));
         assert!(pdf.pages > 1, "expected multiple pages, got {}", pdf.pages);
+    }
+
+    #[test]
+    fn compiles_an_invoice_with_the_payment_block() {
+        let mut input = reference_document();
+        input.kind = DocumentKind::Invoice;
+        input.payment_terms = "Comptant".to_string();
+
+        let pdf = compile_pdf(&input, 3).expect("invoice PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(text.contains("FACTURE"), "invoice title missing: {text}");
+        assert!(text.contains("N° de facture"));
+        assert!(text.contains("Règlement"));
+        assert!(text.contains("Comptant"));
+        assert!(text.contains("Total net à payer"));
+        // Professional client: the late-payment penalties are mandatory.
+        assert!(text.contains("Pénalités de retard"));
+        assert!(
+            !text.contains("Offre gratuite"),
+            "quote subtitle must not appear on an invoice"
+        );
+        assert!(!text.contains("Bon pour accord"));
     }
 
     #[test]
@@ -638,5 +782,181 @@ mod tests {
         );
         assert_eq!(generation_order("reference-42-122"), Some((122, 0)));
         assert_eq!(generation_order("reference-unrelated"), None);
+    }
+
+    fn fake_page_png(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
+        let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            width,
+            height,
+            image::Rgba(color),
+        ));
+        let mut bytes = std::io::Cursor::new(Vec::new());
+        image
+            .write_to(&mut bytes, image::ImageFormat::Png)
+            .expect("encode fake page");
+        bytes.into_inner()
+    }
+
+    fn fake_pages(count: usize) -> impl Fn(&std::path::Path) -> Result<Vec<Vec<u8>>, ExportError> {
+        move |_pdf| {
+            Ok((0..count)
+                .map(|index| fake_page_png(10, 4 + index as u32, [index as u8, 0, 0, 255]))
+                .collect())
+        }
+    }
+
+    fn temp_exports(tag: &str) -> std::path::PathBuf {
+        let exports = std::env::temp_dir().join(format!(
+            "devis-mobile-export-document-{tag}-{}-{}",
+            std::process::id(),
+            generation_timestamp()
+        ));
+        fs::create_dir(&exports).expect("test export directory should be created");
+        exports
+    }
+
+    #[test]
+    fn exports_pdf_and_stacked_png_with_the_french_stem() {
+        let exports = temp_exports("full");
+        let input = reference_document();
+
+        let export = export_document_in(&exports, &input, 10, &fake_pages(2))
+            .expect("document export should succeed");
+
+        assert_eq!(
+            export.pdf_path.file_name().and_then(|n| n.to_str()),
+            Some("devis-10.pdf")
+        );
+        assert_eq!(
+            export.png_path.file_name().and_then(|n| n.to_str()),
+            Some("devis-10.png")
+        );
+        assert!(
+            fs::read(&export.pdf_path)
+                .expect("pdf")
+                .starts_with(b"%PDF-")
+        );
+        let png = image::load_from_memory(&fs::read(&export.png_path).expect("png"))
+            .expect("decode png")
+            .into_rgba8();
+        // Two fake pages (4px and 5px tall) plus the separator.
+        assert_eq!(png.height(), 4 + PAGE_SEPARATOR_HEIGHT + 5);
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    #[test]
+    fn names_invoice_exports_with_the_facture_stem() {
+        let exports = temp_exports("stem");
+        let mut input = reference_document();
+        input.kind = DocumentKind::Invoice;
+        input.payment_terms = "Comptant".to_string();
+
+        let export = export_document_in(&exports, &input, 3, &fake_pages(1))
+            .expect("document export should succeed");
+
+        assert_eq!(
+            export.pdf_path.file_name().and_then(|n| n.to_str()),
+            Some("facture-3.pdf")
+        );
+        assert_eq!(
+            export.png_path.file_name().and_then(|n| n.to_str()),
+            Some("facture-3.png")
+        );
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    #[test]
+    fn keeps_existing_files_on_reexport() {
+        let exports = temp_exports("keep");
+        let input = reference_document();
+        fs::write(exports.join("devis-10.pdf"), b"original pdf").expect("seed pdf");
+        fs::write(exports.join("devis-10.png"), b"original png").expect("seed png");
+        let forbidden_renderer = |_pdf: &std::path::Path| -> Result<Vec<Vec<u8>>, ExportError> {
+            panic!("the renderer must not run when both files exist")
+        };
+
+        let export = export_document_in(&exports, &input, 10, &forbidden_renderer)
+            .expect("reexport should succeed");
+
+        assert_eq!(fs::read(&export.pdf_path).expect("pdf"), b"original pdf");
+        assert_eq!(fs::read(&export.png_path).expect("png"), b"original png");
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    #[test]
+    fn regenerates_only_the_missing_png() {
+        let exports = temp_exports("missing");
+        let input = reference_document();
+        fs::write(exports.join("devis-10.pdf"), b"original pdf").expect("seed pdf");
+
+        let export = export_document_in(&exports, &input, 10, &fake_pages(1))
+            .expect("reexport should succeed");
+
+        assert_eq!(fs::read(&export.pdf_path).expect("pdf"), b"original pdf");
+        let png = image::load_from_memory(&fs::read(&export.png_path).expect("png"))
+            .expect("decode png")
+            .into_rgba8();
+        assert_eq!(png.height(), 4);
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    #[test]
+    fn renderer_failure_surfaces_an_error_and_keeps_the_pdf() {
+        let exports = temp_exports("failure");
+        let input = reference_document();
+        let failing_renderer = |_pdf: &std::path::Path| -> Result<Vec<Vec<u8>>, ExportError> {
+            Err(PdfRenderError::Unsupported.into())
+        };
+
+        let result = export_document_in(&exports, &input, 10, &failing_renderer);
+
+        assert!(result.is_err());
+        assert!(
+            exports.join("devis-10.pdf").exists(),
+            "the PDF must be kept"
+        );
+        assert!(!exports.join("devis-10.png").exists());
+        assert!(!exports.join("devis-10.png.tmp").exists());
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    #[test]
+    fn zero_rendered_pages_is_an_error() {
+        let exports = temp_exports("nopages");
+        let input = reference_document();
+
+        let result = export_document_in(&exports, &input, 10, &fake_pages(0));
+
+        assert!(result.is_err());
+        assert!(!exports.join("devis-10.png").exists());
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    #[test]
+    fn invoice_for_an_individual_omits_the_late_penalties() {
+        let mut input = reference_document();
+        input.kind = DocumentKind::Invoice;
+        input.payment_terms = "Comptant".to_string();
+        input.client.kind = ClientKind::Individual;
+
+        let pdf = compile_pdf(&input, 4).expect("invoice PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(text.contains("FACTURE"));
+        assert!(!text.contains("Pénalités de retard"));
+    }
+
+    #[test]
+    fn quote_keeps_its_conditions_and_signature_blocks() {
+        let input = reference_document();
+
+        let pdf = compile_pdf(&input, 9).expect("quote PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(text.contains("DEVIS"));
+        assert!(text.contains("N° de devis"));
+        assert!(text.contains("Total du devis"));
+        assert!(text.contains("Bon pour accord"));
+        assert!(!text.contains("FACTURE"));
     }
 }
