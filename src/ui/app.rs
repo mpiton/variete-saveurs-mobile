@@ -6,7 +6,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering as AtomicOrdering},
     },
-    time::Duration,
 };
 
 use dioxus::{
@@ -16,20 +15,19 @@ use dioxus::{
     router::components::HistoryProvider,
 };
 use rusqlite::Connection;
-use tokio::time::sleep;
 
 use crate::{
-    domain::{db::open_database, models::Document as DomainDocument},
+    domain::db::open_database,
     platform::{export::generate_reference_export, paths::database_path, share::share_file},
 };
 
 use super::{
     catalog::Catalog,
-    components::{Button, ButtonVariant, ErrorBlock, Snackbar},
     form::Form,
     home::Home,
-    issue::{ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow, retry_export},
+    issue::{IssueFlow, IssuePhase},
     preview::Preview,
+    record::Record,
 };
 
 const APP_CSS: Asset = asset!("/assets/app.css");
@@ -434,89 +432,6 @@ fn AppShell() -> Element {
             }
         }
     }
-}
-
-#[component]
-fn Record(id: i64) -> Element {
-    let navigator = use_navigator();
-    let issue_flow = use_context::<IssueFlow>();
-    // Post-issue state published by the flow: the fiche confirms the emission
-    // (snackbar) and carries the re-export path when the PDF failed (ARCHI §4
-    // — the number is never rolled back after commit).
-    let (issued_here, title, notice, export_running, export_failed) = match &*issue_flow.0.read() {
-        IssuePhase::Issued(state) if state.document.id == id => (
-            true,
-            document_title(&state.document),
-            state.notice.clone(),
-            state.export == ExportPhase::Running,
-            state.export == ExportPhase::Failed,
-        ),
-        _ => (false, "Fiche".to_string(), None, false, false),
-    };
-
-    // The snackbar is transient (DESIGN.md §6): auto-dismiss after a few
-    // seconds, and the timer only ever dismisses ITS notice — a newer one
-    // (retry result, newer issuance) survives an older timer.
-    let notice_flow = issue_flow;
-    use_effect(move || {
-        let expected = match &*notice_flow.0.read() {
-            IssuePhase::Issued(state) => state.notice.clone(),
-            _ => None,
-        };
-        if let Some(expected) = expected {
-            spawn(async move {
-                sleep(NOTICE_DURATION).await;
-                dismiss_notice(notice_flow, &expected);
-            });
-        }
-    });
-
-    // Leaving the fiche ends the post-emission moment: no stale snackbar or
-    // retry block on later visits (the aperçu's « Exporter » stays the
-    // standing re-export path).
-    let reset_flow = issue_flow;
-    use_drop(move || reset_issue_flow(reset_flow));
-
-    rsx! {
-        section { class: "screen",
-            div { class: "placeholder-panel",
-                h2 { "{title}" }
-                if !issued_here {
-                    p { "Détail d’un document émis à venir." }
-                }
-                if export_running {
-                    p { role: "status", aria_live: "polite", "Génération du PDF en cours…" }
-                }
-                if export_failed {
-                    ErrorBlock {
-                        title: "PDF non généré".to_string(),
-                        message: "Le document est bien émis et son numéro est conservé. Réessayez l’export.".to_string(),
-                    }
-                    Button {
-                        label: "Réessayer l’export".to_string(),
-                        variant: ButtonVariant::Tonal,
-                        onclick: move |_| retry_export(issue_flow),
-                    }
-                }
-                Button {
-                    label: "Aperçu".to_string(),
-                    variant: ButtonVariant::Tonal,
-                    onclick: move |_| {
-                        navigator.push(Route::Preview { document: Some(id) });
-                    },
-                }
-            }
-            if let Some(message) = notice {
-                Snackbar { message }
-            }
-        }
-    }
-}
-
-const NOTICE_DURATION: Duration = Duration::from_secs(4);
-
-fn document_title(document: &DomainDocument) -> String {
-    format!("{} n° {}", document.input.kind.label(), document.number)
 }
 
 #[component]

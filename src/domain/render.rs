@@ -325,7 +325,9 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
-fn format_date(value: &str) -> String {
+/// French display of a stored ISO date (« 2026-07-19 » → « 19/07/2026 ») —
+/// shared with the fiche (ui/record.rs) so the screen matches the document.
+pub(crate) fn format_date(value: &str) -> String {
     NaiveDate::parse_from_str(value, "%Y-%m-%d")
         .map(|date| date.format("%d/%m/%Y").to_string())
         .unwrap_or_else(|_| value.to_string())
