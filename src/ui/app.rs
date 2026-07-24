@@ -18,7 +18,7 @@ use rusqlite::Connection;
 
 use crate::{
     domain::db::open_database,
-    platform::{export::generate_reference_export, paths::database_path},
+    platform::{export::generate_reference_export, paths::database_path, share::share_file},
 };
 
 use super::{
@@ -313,13 +313,21 @@ fn AppShell() -> Element {
                                         let outcome =
                                             std::panic::catch_unwind(generate_reference_export);
                                         let next = match outcome {
-                                            Ok(Ok(export)) => DebugExportStatus::Finished(format!(
-                                                "PDF de {} pages généré en {} ms : {} (HTML : {})",
-                                                export.pages,
-                                                export.elapsed.as_millis(),
-                                                export.pdf_path.display(),
-                                                export.html_path.display(),
-                                            )),
+                                            Ok(Ok(export)) => {
+                                                // Best-effort: the share sheet is the
+                                                // visible confirmation on device; the
+                                                // export itself already succeeded.
+                                                if let Err(error) = share_file(&export.pdf_path) {
+                                                    eprintln!("Debug share sheet failed: {error}");
+                                                }
+                                                DebugExportStatus::Finished(format!(
+                                                    "PDF de {} pages généré en {} ms : {} (HTML : {})",
+                                                    export.pages,
+                                                    export.elapsed.as_millis(),
+                                                    export.pdf_path.display(),
+                                                    export.html_path.display(),
+                                                ))
+                                            }
                                             Ok(Err(error)) => {
                                                 eprintln!("Debug reference export failed: {error}");
                                                 DebugExportStatus::Finished(error.to_string())

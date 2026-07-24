@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only): runs the Typst reference export on a worker thread with panic
   containment, announces the result or a French error via a polite status
   line. Used by the task 05 fidelity verification on Android 35.
+- Share sheet right after the debug reference export: `platform::share`
+  (Intent `ACTION_SEND` over a `content://` URI) backed by
+  `ExportFileProvider`, a read-only Kotlin provider on `exports/` declared in
+  the manifest (the Dioxus build accepts neither extra resources nor extra
+  Kotlin sources, ruling out the androidx FileProvider XML).
 - Full-screen document preview (« Aperçu »): the draft (next number peeked
   read-only, never reserved, discreet « aperçu » pill) and any issued
   document rendered exactly in an A4 iframe `srcdoc` on the neutral

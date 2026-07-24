@@ -3,3 +3,4 @@
 
 pub mod export;
 pub mod paths;
+pub mod share;

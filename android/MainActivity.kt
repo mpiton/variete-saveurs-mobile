@@ -1,15 +1,23 @@
 package dev.dioxus.main
 
+import android.content.ContentProvider
+import android.content.ContentValues
 import android.content.res.Configuration
+import android.database.Cursor
+import android.database.MatrixCursor
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import java.io.File
 import kotlin.math.roundToInt
 
 typealias BuildConfig = fr.variete_saveurs.devis_factures.BuildConfig
@@ -113,3 +121,49 @@ class MainActivity : WryActivity() {
     }
 }
 
+/**
+ * Read-only provider exposing the app-private `files/exports/` directory to
+ * the share sheet (ACTION_SEND needs a content:// URI). Kept in this file
+ * because the Dioxus build only compiles the activity referenced from
+ * Dioxus.toml.
+ */
+class ExportFileProvider : ContentProvider() {
+    override fun onCreate(): Boolean = true
+
+    override fun getType(uri: Uri): String = when {
+        uri.path.orEmpty().endsWith(".pdf") -> "application/pdf"
+        uri.path.orEmpty().endsWith(".html") -> "text/html"
+        else -> "application/octet-stream"
+    }
+
+    override fun query(
+        uri: Uri,
+        projection: Array<out String>?,
+        selection: String?,
+        selectionArgs: Array<out String>?,
+        sortOrder: String?,
+    ): Cursor {
+        val file = fileFor(uri)
+        val cursor = MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE))
+        cursor.addRow(arrayOf(file.name, file.length()))
+        return cursor
+    }
+
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        require(mode == "r" || mode == "rt") { "read-only provider" }
+        return ParcelFileDescriptor.open(fileFor(uri), ParcelFileDescriptor.MODE_READ_ONLY)
+    }
+
+    override fun insert(uri: Uri, values: ContentValues?): Uri? = null
+    override fun update(uri: Uri, values: ContentValues?, selection: String?, args: Array<out String>?): Int = 0
+    override fun delete(uri: Uri, selection: String?, args: Array<out String>?): Int = 0
+
+    private fun fileFor(uri: Uri): File {
+        val exportsDir = File(context!!.filesDir, "exports").canonicalFile
+        val file = File(exportsDir, uri.path.orEmpty().removePrefix("/")).canonicalFile
+        if (!file.path.startsWith(exportsDir.path + File.separator) || !file.isFile) {
+            throw IllegalArgumentException("path outside exports: ${uri.path}")
+        }
+        return file
+    }
+}
