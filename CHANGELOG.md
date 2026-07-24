@@ -86,3 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on physical devices. Insets are now cached from the decor view listener and
   replayed into the WebView a few times after attach (evaluateJavascript is a
   no-op until a page loads), keeping the chrome below the status bar.
+
+### Changed
+
+- Architecture: Typst adopted as the PDF engine (ADR 0003); `ARCHI.md §5`
+  and the export stack note now describe the
+  `DocumentInput → Typst → PDF privé → PdfRenderer → PNG → partage/email`
+  pipeline instead of the impossible WebView print design.
