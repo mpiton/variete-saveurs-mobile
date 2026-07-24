@@ -67,11 +67,27 @@ pub fn Snackbar(message: String, #[props(default = true)] announce: bool) -> Ele
 }
 
 #[component]
-pub fn ErrorBlock(title: String, message: String) -> Element {
+pub fn ErrorBlock(
+    title: String,
+    #[props(default)] message: String,
+    /// Aggregated list variant (e.g. validation errors) — rendered under the
+    /// optional single message.
+    #[props(default)]
+    items: Vec<String>,
+) -> Element {
     rsx! {
         section { class: "error-block", role: "alert",
             strong { "{title}" }
-            p { "{message}" }
+            if !message.is_empty() {
+                p { "{message}" }
+            }
+            if !items.is_empty() {
+                ul { class: "error-block__list",
+                    for item in items {
+                        li { key: "{item}", "{item}" }
+                    }
+                }
+            }
         }
     }
 }

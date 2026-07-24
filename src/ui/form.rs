@@ -1,8 +1,9 @@
 //! Draft form screen: stacked sections (client, dates, lines, payment terms)
 //! bound to the domain `DocumentInput`, with debounced auto-save to the draft
 //! store. Lines are summarized as rows, added from the catalog picker sheet
-//! (or typed freely) and edited in a bottom sheet (`LineSheet`); the issue
-//! flow lands in task 20.
+//! (or typed freely) and edited in a bottom sheet (`LineSheet`). The « Émettre »
+//! button runs the end-to-end issue flow (`issue` module): validation errors
+//! stay on screen as a persistent block with the faulty fields flagged.
 
 use std::time::Duration;
 
@@ -14,7 +15,7 @@ use crate::domain::{
     db::{list_active_catalog_items, load_draft, save_draft, search_clients},
     models::{CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
     money::{format_eur, parse_eur_to_cents},
-    validation::{MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
+    validation::{DocumentField, MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
 };
 
 use super::{
@@ -23,6 +24,7 @@ use super::{
         Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
         OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
     },
+    issue::{IssueFlow, IssuePhase, field_error, line_has_error, start_issue},
 };
 
 const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(500);
@@ -32,10 +34,12 @@ const SUGGESTION_DEBOUNCE: Duration = Duration::from_millis(200);
 pub(super) fn Form() -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
+    let issue_flow = use_context::<IssueFlow>();
     let initial_database = database.clone();
     let catalog_database = database.clone();
     let suggestions_database = database.clone();
     let preview_database = database.clone();
+    let issue_database = database.clone();
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
@@ -99,6 +103,24 @@ pub(super) fn Form() -> Element {
         close_client_suggestions(client_suggestions, suggestion_search);
     });
 
+    // Validation errors are persistent but never stale: any draft edit drops
+    // the block and the field flags (re-tapping « Émettre » re-lists what
+    // still needs fixing). The flow signal is peeked, not read — subscribing
+    // here would clear freshly published errors on arrival — and generation
+    // zero is the mount run, before any edit.
+    let mut issue_flow_on_edit = issue_flow;
+    use_effect(move || {
+        if edit_generation() == 0 {
+            return;
+        }
+        if matches!(
+            &*issue_flow_on_edit.0.peek(),
+            IssuePhase::Invalid(_) | IssuePhase::Failed(_)
+        ) {
+            issue_flow_on_edit.0.set(IssuePhase::Idle);
+        }
+    });
+
     let Some(current) = draft.read().clone() else {
         return rsx! {
             section { class: "screen", aria_label: "Brouillon introuvable",
@@ -123,6 +145,15 @@ pub(super) fn Form() -> Element {
     let save_error_message = save_error();
     let picker_error_message = picker_error();
     let suggestions = client_suggestions();
+    let (issuing, issue_errors, issue_failure) = match &*issue_flow.0.read() {
+        IssuePhase::Running => (true, Vec::new(), None),
+        IssuePhase::Invalid(errors) => (false, errors.clone(), None),
+        IssuePhase::Failed(message) => (false, Vec::new(), Some(message.clone())),
+        _ => (false, Vec::new(), None),
+    };
+    let line_error_flags: Vec<bool> = (0..current.lines.len())
+        .map(|index| line_has_error(&issue_errors, index))
+        .collect();
     let line_count = current.lines.len();
     let (can_move_up, can_move_down) = line_editor
         .read()
@@ -156,6 +187,7 @@ pub(super) fn Form() -> Element {
                         label: "Nom".to_string(),
                         name: "client-name".to_string(),
                         value: current.client.name.clone(),
+                        error: field_error(&issue_errors, DocumentField::ClientName),
                         oninput: move |event: FormEvent| {
                             let value = event.value();
                             apply_edit(draft, edit_generation, |draft| {
@@ -210,6 +242,7 @@ pub(super) fn Form() -> Element {
                     label: "Adresse".to_string(),
                     name: "client-address".to_string(),
                     value: current.client.address.clone(),
+                    error: field_error(&issue_errors, DocumentField::ClientAddress),
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.client.address = event.value();
@@ -272,6 +305,7 @@ pub(super) fn Form() -> Element {
                     name: "issue-date".to_string(),
                     input_type: "date".to_string(),
                     value: current.issue_date.clone(),
+                    error: field_error(&issue_errors, DocumentField::IssueDate),
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.issue_date = event.value();
@@ -283,6 +317,7 @@ pub(super) fn Form() -> Element {
                     name: "event-date".to_string(),
                     input_type: "date".to_string(),
                     value: current.event_date.clone(),
+                    error: field_error(&issue_errors, DocumentField::EventDate),
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.event_date = event.value();
@@ -304,9 +339,14 @@ pub(super) fn Form() -> Element {
                         for (index, line) in current.lines.iter().enumerate() {
                             li { key: "{index}",
                                 button {
-                                    class: "line-row__main",
+                                    class: if line_error_flags[index] {
+                                        "line-row__main is-error"
+                                    } else {
+                                        "line-row__main"
+                                    },
                                     r#type: "button",
                                     aria_label: line_row_label(index, line),
+                                    aria_invalid: line_error_flags[index],
                                     onclick: move |_| open_line_editor(draft, line_editor, index),
                                     if let Some(group) = &line.group {
                                         span { class: "line-row__group", "{group}" }
@@ -341,6 +381,7 @@ pub(super) fn Form() -> Element {
                     name: "payment-terms".to_string(),
                     placeholder: "À réception".to_string(),
                     value: current.payment_terms.clone(),
+                    error: field_error(&issue_errors, DocumentField::PaymentTerms),
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.payment_terms = event.value();
@@ -353,6 +394,26 @@ pub(super) fn Form() -> Element {
                 ErrorBlock {
                     title: "Sauvegarde impossible".to_string(),
                     message: error,
+                }
+            }
+
+            // Validation failures stay on screen (DESIGN.md §6 : les erreurs
+            // sont des blocs persistants, jamais des snackbars) until the next
+            // edit; the faulty fields above carry the same message.
+            if !issue_errors.is_empty() {
+                ErrorBlock {
+                    title: "Impossible d’émettre le document".to_string(),
+                    items: issue_errors
+                        .iter()
+                        .map(|error| error.message.clone())
+                        .collect(),
+                }
+            }
+
+            if let Some(message) = issue_failure {
+                ErrorBlock {
+                    title: "Émission impossible".to_string(),
+                    message,
                 }
             }
 
@@ -382,9 +443,13 @@ pub(super) fn Form() -> Element {
                     }
                     Button {
                         label: issue_label,
-                        // Branché sur le flux d’émission dans la tâche 20.
-                        disabled: true,
-                        onclick: move |_| {},
+                        loading: issuing,
+                        onclick: move |_| {
+                            let input = draft.read().clone();
+                            if let Some(input) = input {
+                                start_issue(issue_flow, issue_database.clone(), input);
+                            }
+                        },
                     }
                 }
             }

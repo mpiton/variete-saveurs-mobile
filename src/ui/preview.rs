@@ -19,6 +19,7 @@ use crate::platform::export::export_document;
 use super::{
     app::DatabaseContext,
     components::{Button, ButtonVariant, ErrorBlock, Snackbar, issue_label},
+    issue::{IssueFlow, IssuePhase, start_issue, write_from_worker},
 };
 
 const PREVIEW_GESTURES: &str = include_str!("preview_gestures.js");
@@ -164,11 +165,9 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                     }
                     footer { class: "chrome-action-bar preview-action-bar",
                         if draft {
-                            Button {
-                                label: issue_label(&data.kind).to_string(),
-                                // Branché sur le flux d’émission dans la tâche 20.
-                                disabled: true,
-                                onclick: move |_| {},
+                            IssueDraftButton {
+                                kind: data.kind.clone(),
+                                input: data.input.clone(),
                             }
                         } else {
                             Button {
@@ -180,7 +179,7 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                                         return;
                                     }
                                     export_state.set(ExportState::Running);
-                                    let mut worker_state = export_state;
+                                    let worker_state = export_state;
                                     let input = export_input.clone();
                                     std::thread::spawn(move || {
                                         let outcome = std::panic::catch_unwind(
@@ -190,9 +189,8 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                                         );
                                         let next = match outcome {
                                             Ok(Ok(export)) => ExportState::Done(format!(
-                                                "Export terminé : {} et {}",
-                                                file_label(&export.pdf_path),
-                                                file_label(&export.png_path),
+                                                "Export terminé : {}",
+                                                export.files_label(),
                                             )),
                                             Ok(Err(error)) => {
                                                 eprintln!("Document export failed: {error}");
@@ -206,19 +204,7 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                                                 )
                                             }
                                         };
-                                        // The write can race a render holding a
-                                        // read borrow; retry briefly, then give up
-                                        // (the screen may also be gone — the files
-                                        // are written either way).
-                                        for _ in 0..10 {
-                                            if let Ok(mut guard) = worker_state.try_write() {
-                                                *guard = next;
-                                                return;
-                                            }
-                                            std::thread::sleep(
-                                                std::time::Duration::from_millis(50),
-                                            );
-                                        }
+                                        write_from_worker(worker_state, |state| *state = next);
                                     });
                                 },
                             }
@@ -247,10 +233,24 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
     }
 }
 
-fn file_label(path: &std::path::Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
+/// The draft's « Émettre » button, isolated in its own component so the
+/// preview body keeps its load-once property: an issue-phase change never
+/// re-triggers the SQLite reload + HTML render above (the draft disappears
+/// from under the screen on success — navigation moves to the fiche first).
+#[component]
+fn IssueDraftButton(kind: DocumentKind, input: DocumentInput) -> Element {
+    let database = use_context::<DatabaseContext>();
+    let issue_flow = use_context::<IssueFlow>();
+    let issuing = matches!(&*issue_flow.0.read(), IssuePhase::Running);
+    rsx! {
+        Button {
+            label: issue_label(&kind).to_string(),
+            loading: issuing,
+            onclick: move |_| {
+                start_issue(issue_flow, database.clone(), input.clone());
+            },
+        }
+    }
 }
 
 fn load_from_context(

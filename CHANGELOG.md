@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- End-to-end issue flow behind « Émettre » (draft form and draft preview):
+  the full chain — structured validation → transactional emission (number +
+  insert) → draft clear → decoupled PDF/PNG export — runs on a worker thread
+  under the button's loading state, and the phase machine itself makes a
+  double-tap a no-op. Validation errors stay on screen as a persistent
+  aggregated block with the faulty fields and line rows flagged (cleared on
+  the next edit, never on a timer); a failed export leaves the document
+  issued — the number is never rolled back after commit (ARCHI §4) — and the
+  fiche shows « PDF non généré » with a working « Réessayer l'export ».
+  Success replaces the draft screen with the fiche and a transient
+  « Devis n° 10 émis » snackbar.
+- `validate_document_fields` attributes each validation error to its field
+  (`DocumentField`, zero-based line indices) so the form can flag inputs;
+  `validate_document` keeps its flat-messages contract on top of it.
+- `DocumentKind::label()` centralizes the French display name
+  (« Devis »/« Facture ») and `DocumentExport::files_label()` the export
+  result snackbar text; `ErrorBlock` gains an aggregated list variant for
+  validation errors.
+
 - PNG export pipeline for issued documents: « Exporter » on the preview writes
   `exports/{devis|facture}-N.pdf` (Typst) and a single stacked PNG
   (`PdfRenderer` at ~150 dpi per the task spec, pages stacked vertically with
@@ -33,8 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only, never reserved, discreet « aperçu » pill) and any issued
   document rendered exactly in an A4 iframe `srcdoc` on the neutral
   background, with pinch-zoom, pan and double-tap fit-to-width gestures,
-  and a contextual chrome action bar (Issue / Export-Share-Send buttons
-  staged disabled for tasks 19/20/22/26).
+  and a contextual chrome action bar (Export / Share-Send buttons staged
+  disabled for tasks 19/22/26).
 - Shared `issue_label` helper and `.chrome-action-bar` style now backing
   both the form and the preview action bars.
 

@@ -728,6 +728,10 @@ input[aria-busy="true"]:disabled {
     background: var(--color-surface-dim);
 }
 
+.line-row__main.is-error {
+    border-color: var(--color-danger);
+}
+
 .line-row__group {
     grid-column: 1 / -1;
     color: var(--color-primary);
@@ -952,6 +956,12 @@ input[aria-busy="true"]:disabled {
 }
 
 .error-block p {
+    color: inherit;
+}
+
+.error-block__list {
+    margin: 0;
+    padding-left: var(--space-md);
     color: inherit;
 }
 

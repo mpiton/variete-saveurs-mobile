@@ -51,6 +51,23 @@ pub struct DocumentExport {
     pub png_path: PathBuf,
 }
 
+impl DocumentExport {
+    /// « devis-10.pdf et devis-10.png » — snackbar-friendly pair of file names.
+    pub fn files_label(&self) -> String {
+        format!(
+            "{} et {}",
+            file_label(&self.pdf_path),
+            file_label(&self.png_path)
+        )
+    }
+}
+
+fn file_label(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
 /// Exports an issued document as `{devis|facture}-{n}.pdf` and `.png` under
 /// `exports/` (ARCHI §4). Existing files are kept as-is (issued documents are
 /// frozen); only missing files are regenerated, so the aperçu's « Exporter »
@@ -644,8 +661,10 @@ mod tests {
         export_document_in, generation_order, generation_timestamp, publish_generation,
         reference_document,
     };
+    use crate::domain::db::{get_document, issue_document, open_database};
     use crate::domain::models::{ClientKind, DocumentKind};
     use crate::platform::png_stack::PAGE_SEPARATOR_HEIGHT;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn compiles_reference_document_to_multi_page_pdf() {
@@ -917,6 +936,42 @@ mod tests {
         );
         assert!(!exports.join("devis-10.png").exists());
         assert!(!exports.join("devis-10.png.tmp").exists());
+        fs::remove_dir_all(exports).expect("cleanup");
+    }
+
+    // ARCHI §4 — emission and export are decoupled: a sabotaged export leaves
+    // the issued document (and its number) intact, and a later re-export
+    // regenerates the missing files.
+    #[test]
+    fn issued_document_survives_a_sabotaged_export_and_reexports() {
+        let exports = temp_exports("decoupled");
+        let db_file = NamedTempFile::new().expect("temp database file");
+        let database = open_database(db_file.path()).expect("open temp database");
+        let mut connection = database.lock().expect("lock database");
+
+        let issued = issue_document(
+            &mut connection,
+            reference_document(),
+            None,
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue document");
+
+        let sabotaged = |_pdf: &std::path::Path| -> Result<Vec<Vec<u8>>, ExportError> {
+            Err(PdfRenderError::Unsupported.into())
+        };
+        assert!(
+            export_document_in(&exports, &issued.input, issued.number, &sabotaged).is_err(),
+            "the sabotaged export must fail"
+        );
+
+        let stored = get_document(&connection, issued.id).expect("document still stored");
+        assert_eq!(stored.number, issued.number, "the number is never lost");
+
+        let export = export_document_in(&exports, &issued.input, issued.number, &fake_pages(1))
+            .expect("re-export after a failure");
+        assert!(export.pdf_path.exists());
+        assert!(export.png_path.exists());
         fs::remove_dir_all(exports).expect("cleanup");
     }
 
