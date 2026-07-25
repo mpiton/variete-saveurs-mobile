@@ -249,116 +249,6 @@ pub fn clear_draft(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Settings keys (ARCHI.md §3): the Brevo email configuration, entered once
-/// from the settings screen — never hardcoded, never logged (CLAUDE.md
-/// NEVER) — plus the first-launch prompt dismissal.
-pub const SETTING_BREVO_API_KEY: &str = "brevo_api_key";
-pub const SETTING_SENDER_EMAIL: &str = "sender_email";
-pub const SETTING_SENDER_NAME: &str = "sender_name";
-const SETTING_EMAIL_SETUP_DISMISSED: &str = "email_setup_dismissed";
-
-/// Email sending configuration as stored in `settings` (ADR 0002). Every
-/// field stays optional until the gérante completes the settings screen;
-/// sending is gated on `is_configured`. The key VALUE never leaves this
-/// module outside the send path (CLAUDE.md NEVER): the struct only carries
-/// its presence, so no Debug formatting or UI hook can leak it.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct EmailSettings {
-    pub has_api_key: bool,
-    pub sender_email: Option<String>,
-    pub sender_name: Option<String>,
-}
-
-impl EmailSettings {
-    /// Sending needs a key and a sender address (ARCHI.md §4 envoi email);
-    /// the display name falls back to the address when unset.
-    pub fn is_configured(&self) -> bool {
-        self.has_api_key
-            && self
-                .sender_email
-                .as_deref()
-                .is_some_and(|email| !email.is_empty())
-    }
-}
-
-pub fn load_email_settings(connection: &Connection) -> rusqlite::Result<EmailSettings> {
-    let mut statement =
-        connection.prepare("SELECT key, value FROM settings WHERE key IN (?1, ?2, ?3)")?;
-    let rows = statement.query_map(
-        params![
-            SETTING_BREVO_API_KEY,
-            SETTING_SENDER_EMAIL,
-            SETTING_SENDER_NAME
-        ],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-    )?;
-    let mut settings = EmailSettings::default();
-    for row in rows {
-        let (key, value) = row?;
-        if key == SETTING_BREVO_API_KEY {
-            settings.has_api_key = !value.is_empty();
-        } else if key == SETTING_SENDER_EMAIL {
-            settings.sender_email = Some(value);
-        } else if key == SETTING_SENDER_NAME {
-            settings.sender_name = Some(value);
-        }
-    }
-    Ok(settings)
-}
-
-/// Persists the email configuration. `new_api_key` is `Some` only when the
-/// gérante typed a replacement: `None` keeps the stored key, which the
-/// settings screen never re-displays (« configurée • modifier »). An empty
-/// sender name drops the row so the sender falls back to the address.
-pub fn save_email_settings(
-    connection: &Connection,
-    new_api_key: Option<&str>,
-    sender_email: &str,
-    sender_name: &str,
-) -> rusqlite::Result<()> {
-    // One transaction: a mid-save failure never leaves a half-written
-    // configuration behind a « Enregistrement impossible » message.
-    let transaction = connection.unchecked_transaction()?;
-    if let Some(key) = new_api_key.map(str::trim).filter(|key| !key.is_empty()) {
-        upsert_setting(&transaction, SETTING_BREVO_API_KEY, key)?;
-    }
-    upsert_setting(&transaction, SETTING_SENDER_EMAIL, sender_email.trim())?;
-    let name = sender_name.trim();
-    if name.is_empty() {
-        transaction.execute(
-            "DELETE FROM settings WHERE key = ?1",
-            params![SETTING_SENDER_NAME],
-        )?;
-    } else {
-        upsert_setting(&transaction, SETTING_SENDER_NAME, name)?;
-    }
-    transaction.commit()
-}
-
-fn upsert_setting(connection: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
-    connection.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![key, value],
-    )?;
-    Ok(())
-}
-
-pub fn email_setup_dismissed(connection: &Connection) -> rusqlite::Result<bool> {
-    let value = connection
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            params![SETTING_EMAIL_SETUP_DISMISSED],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    Ok(value.as_deref() == Some("1"))
-}
-
-pub fn dismiss_email_setup(connection: &Connection) -> rusqlite::Result<()> {
-    upsert_setting(connection, SETTING_EMAIL_SETUP_DISMISSED, "1")
-}
-
 pub fn insert_document(
     transaction: &Transaction<'_>,
     number: i64,
@@ -623,11 +513,9 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        EmailSettings, IssueError, SETTING_BREVO_API_KEY, clear_draft, dismiss_email_setup,
-        email_setup_dismissed, get_document, insert_document, issue_document,
-        list_active_catalog_items, list_catalog, list_documents, load_draft, load_email_settings,
-        mark_sent, migrate, open_database, save_draft, save_email_settings, search_clients,
-        seed_catalog, upsert_catalog_item,
+        IssueError, clear_draft, get_document, insert_document, issue_document,
+        list_active_catalog_items, list_catalog, list_documents, load_draft, mark_sent, migrate,
+        open_database, save_draft, search_clients, seed_catalog, upsert_catalog_item,
     };
     use crate::domain::convert::invoice_draft_from_quote;
     use crate::domain::models::{
@@ -1462,61 +1350,5 @@ mod tests {
         let saved = get_document(&connection, document_id).expect("get document");
         assert_eq!(saved.input, input);
         assert_eq!(saved.total_cents, 5_100);
-    }
-
-    #[test]
-    fn email_settings_roundtrip_and_key_update() {
-        let (_file, connection) = initialized_connection();
-
-        let empty = load_email_settings(&connection).expect("load empty settings");
-        assert_eq!(empty, EmailSettings::default());
-        assert!(!empty.is_configured());
-
-        save_email_settings(
-            &connection,
-            Some("key-1"),
-            "  contact@variete-saveurs.fr ",
-            " Variété de Saveurs ",
-        )
-        .expect("save settings");
-        let saved = load_email_settings(&connection).expect("load saved settings");
-        assert!(saved.has_api_key);
-        assert_eq!(
-            saved.sender_email.as_deref(),
-            Some("contact@variete-saveurs.fr")
-        );
-        assert_eq!(saved.sender_name.as_deref(), Some("Variété de Saveurs"));
-        assert!(saved.is_configured());
-
-        // Updating without a new key keeps the stored one (« configurée •
-        // modifier »): the UI never re-displays it.
-        save_email_settings(&connection, None, "pro@example.fr", "").expect("update without key");
-        let updated = load_email_settings(&connection).expect("load updated settings");
-        assert!(updated.has_api_key);
-        assert_eq!(updated.sender_email.as_deref(), Some("pro@example.fr"));
-        assert_eq!(updated.sender_name, None);
-        assert!(updated.is_configured());
-
-        // A whitespace-only replacement must not clobber the stored key.
-        save_email_settings(&connection, Some("   "), "pro@example.fr", "")
-            .expect("whitespace key is ignored");
-        let stored_key: String = connection
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                params![SETTING_BREVO_API_KEY],
-                |row| row.get(0),
-            )
-            .expect("stored key");
-        assert_eq!(stored_key, "key-1");
-    }
-
-    #[test]
-    fn email_setup_dismissal_persists() {
-        let (_file, connection) = initialized_connection();
-
-        assert!(!email_setup_dismissed(&connection).expect("default not dismissed"));
-        dismiss_email_setup(&connection).expect("dismiss");
-        dismiss_email_setup(&connection).expect("dismiss is idempotent");
-        assert!(email_setup_dismissed(&connection).expect("dismissed"));
     }
 }

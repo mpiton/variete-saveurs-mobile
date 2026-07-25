@@ -5,8 +5,10 @@
 pub mod convert;
 pub mod db;
 pub mod duplicate;
+pub mod email;
 pub mod models;
 pub mod money;
 pub mod numbering;
 pub mod render;
+pub mod settings;
 pub mod validation;

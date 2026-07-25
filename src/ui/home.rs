@@ -2,12 +2,10 @@ use chrono::Utc;
 use dioxus::prelude::*;
 
 use crate::domain::{
-    db::{
-        dismiss_email_setup, email_setup_dismissed, list_documents, load_draft,
-        load_email_settings, save_draft,
-    },
+    db::{list_documents, load_draft, save_draft},
     models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind},
     money::format_eur,
+    settings::{dismiss_email_setup, email_setup_dismissed, load_email_settings},
 };
 
 use super::{
@@ -387,8 +385,9 @@ mod tests {
 
     use super::{DatabaseContext, HomeFilter, blank_draft, load_home_data};
     use crate::domain::{
-        db::{dismiss_email_setup, open_database, save_email_settings},
+        db::open_database,
         models::DocumentKind,
+        settings::{dismiss_email_setup, save_email_settings},
     };
 
     fn temp_context() -> (NamedTempFile, DatabaseContext) {

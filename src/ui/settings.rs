@@ -10,7 +10,7 @@ use dioxus::prelude::*;
 use tokio::time::sleep;
 
 use crate::domain::{
-    db::{EmailSettings, load_email_settings, save_email_settings},
+    settings::{EmailSettings, load_email_settings, save_email_settings},
     validation::{plausible_email, validate_email_settings},
 };
 
