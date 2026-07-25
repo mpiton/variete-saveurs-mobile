@@ -116,7 +116,7 @@ fn export_document_in(
     Ok(DocumentExport { pdf_path, png_path })
 }
 
-fn export_stem(kind: &DocumentKind, number: i64) -> String {
+pub(crate) fn export_stem(kind: &DocumentKind, number: i64) -> String {
     format!("{}-{number}", kind_label(kind))
 }
 

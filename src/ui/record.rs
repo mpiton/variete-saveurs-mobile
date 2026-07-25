@@ -2,9 +2,9 @@
 //! client, dates, total, status badges) with read-only collapsible lines, and
 //! the action stack in the bottom third (Règle du Pouce). An issued document
 //! is frozen (émis = figé, CONTEXT.md): this screen has no edit entry point —
-//! no button, no hidden long-press. Actions are wired as their tasks land
-//! (22 share, 23 convert, 24 duplicate, 26/27 send); until then they render
-//! as disabled placeholders.
+//! no button, no hidden long-press. Export and share (task 22) are live; the
+//! remaining actions are wired as their tasks land (23 convert, 24 duplicate,
+//! 26/27 send) and render as disabled placeholders until then.
 
 use std::time::Duration;
 
@@ -21,8 +21,12 @@ use crate::domain::{
 
 use super::{
     app::{DatabaseContext, Route},
-    components::{BadgeKind, Button, ButtonVariant, ErrorBlock, Snackbar, StatusBadge},
-    issue::{ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow, retry_export},
+    components::{BadgeKind, Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar, StatusBadge},
+    issue::{
+        ExportJobState, ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow,
+        retry_export, start_export, use_export_notice_dismiss,
+    },
+    share::{share_file_names, use_share_flow},
 };
 
 const NOTICE_DURATION: Duration = Duration::from_secs(4);
@@ -81,6 +85,9 @@ pub(super) fn Record(id: i64) -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
     let issue_flow = use_context::<IssueFlow>();
+    let share = use_share_flow();
+    let export_state = use_signal_sync(|| ExportJobState::Ready);
+    use_export_notice_dismiss(export_state);
 
     // Post-issue state published by the flow: the fiche confirms the emission
     // (snackbar) and carries the re-export path when the PDF failed (ARCHI §4
@@ -112,8 +119,8 @@ pub(super) fn Record(id: i64) -> Element {
     });
 
     // Leaving the fiche ends the post-emission moment: no stale snackbar or
-    // retry block on later visits (the aperçu's « Exporter » stays the
-    // standing re-export path).
+    // retry block on later visits (a manual re-export stays available on the
+    // fiche and the aperçu).
     let reset_flow = issue_flow;
     use_drop(move || reset_issue_flow(reset_flow));
 
@@ -159,6 +166,17 @@ pub(super) fn Record(id: i64) -> Element {
             let source_reference = data
                 .source_quote_number
                 .map(|number| format!("Issue du devis n° {number}"));
+            let (pdf_name, png_name) = share_file_names(&input.kind, document.number);
+            let share_input = input.clone();
+            let share_number = document.number;
+            let export_input = input.clone();
+            let export_number = document.number;
+            let manual_export_running = matches!(&*export_state.read(), ExportJobState::Running);
+            let (manual_export_notice, manual_export_error) = match &*export_state.read() {
+                ExportJobState::Done(message) => (Some(message.clone()), None),
+                ExportJobState::Failed(message) => (None, Some(message.clone())),
+                _ => (None, None),
+            };
 
             rsx! {
                 section { class: "screen record-screen",
@@ -206,6 +224,18 @@ pub(super) fn Record(id: i64) -> Element {
                             onclick: move |_| retry_export(issue_flow),
                         }
                     }
+                    if let Some(message) = manual_export_error {
+                        ErrorBlock {
+                            title: "Export impossible".to_string(),
+                            message,
+                        }
+                    }
+                    if let Some(message) = share.error() {
+                        ErrorBlock {
+                            title: "Partage impossible".to_string(),
+                            message,
+                        }
+                    }
 
                     details { class: "record-lines",
                         summary { "Prestations ({line_count})" }
@@ -243,17 +273,15 @@ pub(super) fn Record(id: i64) -> Element {
                             Button {
                                 label: "Exporter le PDF / PNG".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Branché avec le partage dans la tâche 22 ;
-                                // l’aperçu garde l’export manuel d’ici là.
-                                disabled: true,
-                                onclick: move |_| {},
+                                loading: manual_export_running,
+                                onclick: move |_| {
+                                    start_export(export_state, export_input.clone(), export_number);
+                                },
                             }
                             Button {
                                 label: "Partager".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Branché sur le share sheet dans la tâche 22.
-                                disabled: true,
-                                onclick: move |_| {},
+                                onclick: move |_| share.open_sheet(),
                             }
                             Button {
                                 label: "Envoyer par email".to_string(),
@@ -280,8 +308,17 @@ pub(super) fn Record(id: i64) -> Element {
                             }
                         }
                     }
+                    if let Some(message) = manual_export_notice {
+                        Snackbar { message }
+                    }
                     if let Some(message) = notice {
                         Snackbar { message }
+                    }
+                    ShareSheet {
+                        state: share.state(),
+                        pdf_name,
+                        png_name,
+                        on_pick: move |format| share.start(share_input.clone(), share_number, format),
                     }
                 }
             }

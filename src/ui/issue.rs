@@ -10,6 +10,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use dioxus::prelude::*;
+use tokio::time::sleep;
 
 use crate::domain::{
     db::{IssueError, clear_draft, issue_document},
@@ -19,6 +20,9 @@ use crate::domain::{
 use crate::platform::export::{DocumentExport, export_document};
 
 use super::app::DatabaseContext;
+
+/// How long a transient snackbar stays up (DESIGN.md §6).
+const NOTICE_DURATION: Duration = Duration::from_secs(4);
 
 /// App-wide issue flow state, provided by `app()` and consumed by the form
 /// (errors + loading), the preview (loading) and the fiche (notice + export
@@ -139,7 +143,7 @@ pub(super) fn blocks_draft_persistence(phase: &IssuePhase) -> bool {
 
 /// Leaves the issue flow once the fiche is closed: the snackbar and the
 /// re-export block belong to the post-emission moment, not to later visits
-/// (the aperçu's « Exporter » remains the standing re-export path).
+/// (a manual re-export stays available on the fiche and the aperçu).
 pub(super) fn reset_issue_flow(mut flow: IssueFlow) {
     if matches!(&*flow.0.read(), IssuePhase::Issued(_)) {
         flow.0.set(IssuePhase::Idle);
@@ -202,6 +206,84 @@ fn run_export(document: &Document) -> (ExportPhase, Option<DocumentExport>) {
     }
 }
 
+/// State of a manual export job (fiche « Exporter le PDF / PNG », aperçu
+/// « Exporter »), driven from a worker thread: a failure is a persistent
+/// block (DESIGN.md §6), a success a snackbar naming the files.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ExportJobState {
+    Ready,
+    Running,
+    Done(String),
+    Failed(String),
+}
+
+/// Manual export of an issued document; doubles as the re-export path —
+/// `export_document` keeps existing files and regenerates only the missing
+/// ones (ARCHI §4). Same worker shape as the issue chain; the phase guards
+/// the double-tap.
+pub(super) fn start_export(
+    mut state: Signal<ExportJobState, SyncStorage>,
+    input: DocumentInput,
+    number: i64,
+) {
+    if matches!(&*state.read(), ExportJobState::Running) {
+        return;
+    }
+    state.set(ExportJobState::Running);
+    let worker = std::thread::Builder::new().spawn(move || {
+        let outcome = catch_unwind(AssertUnwindSafe(|| export_document(&input, number)));
+        let next = match outcome {
+            Ok(Ok(export)) => {
+                ExportJobState::Done(format!("Export terminé : {}", export.files_label()))
+            }
+            Ok(Err(error)) => {
+                eprintln!("Document export failed: {error}");
+                ExportJobState::Failed(error.to_string())
+            }
+            Err(payload) => {
+                eprintln!("Document export panicked: {payload:?}");
+                ExportJobState::Failed(
+                    "Échec inattendu de l'export du document (détail dans les logs).".to_string(),
+                )
+            }
+        };
+        write_from_worker(state, |current| *current = next);
+    });
+    // Fallible spawn: a resource-starved OS must not panic the UI thread —
+    // the job goes straight to its terminal failure state instead of
+    // staying `Running` forever.
+    if let Err(error) = worker {
+        eprintln!("Export worker could not start: {error}");
+        write_from_worker(state, |current| {
+            *current =
+                ExportJobState::Failed("Impossible de démarrer l'export du document.".to_string())
+        });
+    }
+}
+
+/// Snackbars are transient (DESIGN.md §6): a successful manual-export
+/// notice clears itself after a few seconds, while a failure block stays.
+/// The timer only ever clears ITS result — a newer one survives an older
+/// timer.
+pub(super) fn use_export_notice_dismiss(mut state: Signal<ExportJobState, SyncStorage>) {
+    use_effect(move || {
+        let expected = match &*state.read() {
+            ExportJobState::Done(message) => Some(message.clone()),
+            _ => None,
+        };
+        if let Some(expected) = expected {
+            spawn(async move {
+                sleep(NOTICE_DURATION).await;
+                let still_current =
+                    matches!(&*state.read(), ExportJobState::Done(message) if *message == expected);
+                if still_current {
+                    state.set(ExportJobState::Ready);
+                }
+            });
+        }
+    });
+}
+
 /// Snackbar confirmation right after the fiche appears (« Devis n° 10 émis »).
 fn issued_notice(document: &Document) -> String {
     let participle = match document.input.kind {
@@ -244,21 +326,36 @@ fn update_issued(flow: IssueFlow, document_id: i64, update: impl FnOnce(&mut Iss
 }
 
 /// Writes from a worker thread, where the write can race a render holding a
-/// read borrow: retry while the contention can be transient. The loop is
-/// generous (100 × 50 ms) because dropping the result would strand the flow
-/// in `Running` — the double-tap guard would then block every later attempt.
+/// read borrow. The write is retried until it lands — a lost terminal state
+/// would strand the UI in `Running` with no recovery — unless the screen's
+/// scope is gone: then the result targets nothing and is discarded, loudly.
+/// Contention warnings start after 5 s so a stuck borrow shows in the logs
+/// instead of silently leaking the worker.
 pub(super) fn write_from_worker<T: Send + Sync + 'static>(
     mut signal: Signal<T, SyncStorage>,
     update: impl FnOnce(&mut T),
 ) {
-    for _ in 0..100 {
-        if let Ok(mut guard) = signal.try_write() {
-            update(&mut guard);
-            return;
+    for attempt in 0u32.. {
+        match signal.try_write() {
+            Ok(mut guard) => {
+                update(&mut guard);
+                return;
+            }
+            Err(BorrowMutError::Dropped(error)) => {
+                eprintln!("Worker result discarded, its screen is gone: {error}");
+                return;
+            }
+            Err(_) => {
+                if attempt > 0 && attempt % 100 == 0 {
+                    eprintln!(
+                        "Worker result still queued after {} s of UI contention",
+                        attempt / 20
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
         }
-        std::thread::sleep(Duration::from_millis(50));
     }
-    eprintln!("Worker result dropped after 5 s of UI contention");
 }
 
 #[cfg(test)]

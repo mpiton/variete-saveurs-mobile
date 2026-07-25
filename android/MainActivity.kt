@@ -132,6 +132,7 @@ class ExportFileProvider : ContentProvider() {
 
     override fun getType(uri: Uri): String = when {
         uri.path.orEmpty().endsWith(".pdf") -> "application/pdf"
+        uri.path.orEmpty().endsWith(".png") -> "image/png"
         uri.path.orEmpty().endsWith(".html") -> "text/html"
         else -> "application/octet-stream"
     }

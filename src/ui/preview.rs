@@ -14,12 +14,14 @@ use crate::domain::{
     numbering::next_number,
     render::render_document_html,
 };
-use crate::platform::export::export_document;
 
 use super::{
     app::DatabaseContext,
-    components::{Button, ButtonVariant, ErrorBlock, Snackbar, issue_label},
-    issue::{IssueFlow, IssuePhase, start_issue, write_from_worker},
+    components::{Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar, issue_label},
+    issue::{
+        ExportJobState, IssueFlow, IssuePhase, start_export, start_issue, use_export_notice_dismiss,
+    },
+    share::{share_file_names, use_share_flow},
 };
 
 const PREVIEW_GESTURES: &str = include_str!("preview_gestures.js");
@@ -39,13 +41,6 @@ pub(super) struct PreviewData {
     pub kind: DocumentKind,
     pub number: i64,
     pub input: DocumentInput,
-}
-
-/// State of the issued-document export job, driven from a worker thread.
-enum ExportState {
-    Ready,
-    Running,
-    Done(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,10 +102,13 @@ pub(super) fn load_preview(
 pub(super) fn Preview(document: Option<i64>) -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
-    let mut export_state = use_signal_sync(|| ExportState::Ready);
+    let export_state = use_signal_sync(|| ExportJobState::Ready);
+    let share = use_share_flow();
+    use_export_notice_dismiss(export_state);
 
-    // Loaded synchronously in the body: this screen subscribes to no signal,
-    // so the query + render run once per mount or route-param change.
+    // Loaded synchronously in the body; the phase signals only re-run the
+    // query + render on their own transitions (identical output for a frozen
+    // document, so the iframe and its zoom state are undisturbed).
     match load_from_context(&database, document) {
         Err(error) => {
             let (title, message) = error_message(error);
@@ -133,12 +131,20 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
         Ok(data) => {
             let draft = data.source == PreviewSource::Draft;
             let (export_running, export_message) = match &*export_state.read() {
-                ExportState::Ready => (false, None),
-                ExportState::Running => (true, None),
-                ExportState::Done(message) => (false, Some(message.clone())),
+                ExportJobState::Ready => (false, None),
+                ExportJobState::Running => (true, None),
+                ExportJobState::Done(message) => (false, Some(message.clone())),
+                ExportJobState::Failed(_) => (false, None),
+            };
+            let export_error = match &*export_state.read() {
+                ExportJobState::Failed(message) => Some(message.clone()),
+                _ => None,
             };
             let export_input = data.input.clone();
             let export_number = data.number;
+            let (pdf_name, png_name) = share_file_names(&data.kind, data.number);
+            let share_input = data.input.clone();
+            let share_number = data.number;
             rsx! {
                 section { class: "preview-screen",
                     div {
@@ -163,6 +169,18 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                             }
                         }
                     }
+                    if let Some(message) = export_error {
+                        ErrorBlock {
+                            title: "Export impossible".to_string(),
+                            message,
+                        }
+                    }
+                    if let Some(message) = share.error() {
+                        ErrorBlock {
+                            title: "Partage impossible".to_string(),
+                            message,
+                        }
+                    }
                     footer { class: "chrome-action-bar preview-action-bar",
                         if draft {
                             IssueDraftButton {
@@ -175,45 +193,13 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                                 variant: ButtonVariant::Tonal,
                                 loading: export_running,
                                 onclick: move |_| {
-                                    if matches!(&*export_state.peek(), ExportState::Running) {
-                                        return;
-                                    }
-                                    export_state.set(ExportState::Running);
-                                    let worker_state = export_state;
-                                    let input = export_input.clone();
-                                    std::thread::spawn(move || {
-                                        let outcome = std::panic::catch_unwind(
-                                            std::panic::AssertUnwindSafe(|| {
-                                                export_document(&input, export_number)
-                                            }),
-                                        );
-                                        let next = match outcome {
-                                            Ok(Ok(export)) => ExportState::Done(format!(
-                                                "Export terminé : {}",
-                                                export.files_label(),
-                                            )),
-                                            Ok(Err(error)) => {
-                                                eprintln!("Document export failed: {error}");
-                                                ExportState::Done(error.to_string())
-                                            }
-                                            Err(payload) => {
-                                                eprintln!("Document export panicked: {payload:?}");
-                                                ExportState::Done(
-                                                    "Échec inattendu de l'export du document (détail dans les logs)."
-                                                        .to_string(),
-                                                )
-                                            }
-                                        };
-                                        write_from_worker(worker_state, |state| *state = next);
-                                    });
+                                    start_export(export_state, export_input.clone(), export_number);
                                 },
                             }
                             Button {
                                 label: "Partager".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Branché sur le partage dans la tâche 22.
-                                disabled: true,
-                                onclick: move |_| {},
+                                onclick: move |_| share.open_sheet(),
                             }
                             Button {
                                 label: "Envoyer".to_string(),
@@ -226,6 +212,12 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                     }
                     if let Some(message) = export_message {
                         Snackbar { message }
+                    }
+                    ShareSheet {
+                        state: share.state(),
+                        pdf_name,
+                        png_name,
+                        on_pick: move |format| share.start(share_input.clone(), share_number, format),
                     }
                 }
             }
