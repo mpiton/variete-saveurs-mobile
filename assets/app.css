@@ -1294,3 +1294,51 @@ input[aria-busy="true"]:disabled {
     margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
     margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
 }
+
+/* Settings screen (task 25): the stored key is never re-displayed — the
+   « configurée » row is the only affordance until « Modifier » reveals an
+   empty password field. */
+.settings-key-status {
+    display: flex;
+    min-height: var(--touch-target);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm);
+}
+
+/* Specificity must beat `.screen p` (0,1,1), which sets a muted color. */
+.settings-screen .settings-key-status__label {
+    color: var(--color-ink);
+    font-weight: 500;
+}
+
+/* First-launch email setup prompt (task 25): a non-blocking card — the app
+   works without configuration, only sending stays gated on the fiche. */
+.setup-prompt {
+    display: grid;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+}
+
+.setup-prompt__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--touch-gap);
+}
+
+/* Disabled-send explanation on the fiche (task 25), on the chrome action
+   bar: the only cue left once the home prompt is dismissed. Specificity
+   must beat `.screen p` (0,1,1). */
+.record-screen .record-action-hint {
+    padding: 0 var(--space-md);
+    color: var(--color-on-chrome-muted);
+    text-align: center;
+}
+
+.record-action-hint a {
+    color: var(--color-on-chrome);
+    font-weight: 700;
+}

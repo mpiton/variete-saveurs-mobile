@@ -2,7 +2,10 @@ use chrono::Utc;
 use dioxus::prelude::*;
 
 use crate::domain::{
-    db::{list_documents, load_draft, save_draft},
+    db::{
+        dismiss_email_setup, email_setup_dismissed, list_documents, load_draft,
+        load_email_settings, save_draft,
+    },
     models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind},
     money::format_eur,
 };
@@ -47,6 +50,10 @@ impl HomeFilter {
 struct HomeData {
     documents: Vec<Document>,
     draft: Option<DocumentInput>,
+    /// First-launch prompt (task 25): shown while email sending is
+    /// unconfigured and the gérante hasn't dismissed it. Non-blocking — the
+    /// app works without, only sending stays gated off on the fiche.
+    show_email_setup: bool,
 }
 
 #[component]
@@ -57,10 +64,13 @@ pub(super) fn Home() -> Element {
     let mut fab_open = use_signal(|| false);
     let mut pending_kind = use_signal(|| None::<DocumentKind>);
     let mut action_error = use_signal(|| None::<String>);
+    let reload = use_signal(|| 0_u64);
     let database_ready = database.is_ok();
     let home_data = {
         let database = database.clone();
         use_memo(move || {
+            // Subscribing to `reload` refreshes after « Plus tard ».
+            reload();
             if database.is_ok() {
                 Some(load_home_data(&database, filter()))
             } else {
@@ -69,10 +79,15 @@ pub(super) fn Home() -> Element {
         })
     };
     let home_data = home_data.read();
-    let (documents, draft, load_error) = match home_data.as_ref() {
-        Some(Ok(data)) => (data.documents.as_slice(), data.draft.as_ref(), None),
-        Some(Err(error)) => (&[][..], None, Some(error.as_str())),
-        None => (&[][..], None, None),
+    let (documents, draft, show_email_setup, load_error) = match home_data.as_ref() {
+        Some(Ok(data)) => (
+            data.documents.as_slice(),
+            data.draft.as_ref(),
+            data.show_email_setup,
+            None,
+        ),
+        Some(Err(error)) => (&[][..], None, false, Some(error.as_str())),
+        None => (&[][..], None, false, None),
     };
     let has_draft = draft.is_some();
     let draft_kind = draft.map(|draft| document_kind_label(&draft.kind));
@@ -95,6 +110,33 @@ pub(super) fn Home() -> Element {
                                 filter.set(selected);
                             }
                         },
+                    }
+
+                    if show_email_setup {
+                        div { class: "setup-prompt",
+                            p { class: "setup-prompt__text",
+                                "Pour envoyer vos documents par email, configurez la clé Brevo et l’adresse d’expédition. Le reste de l’app fonctionne sans."
+                            }
+                            div { class: "setup-prompt__actions",
+                                Button {
+                                    label: "Configurer".to_string(),
+                                    variant: ButtonVariant::Tonal,
+                                    onclick: move |_| {
+                                        navigator.push(Route::Settings {});
+                                    },
+                                }
+                                Button {
+                                    label: "Plus tard".to_string(),
+                                    variant: ButtonVariant::Text,
+                                    onclick: {
+                                        let database = database.clone();
+                                        move |_| {
+                                            dismiss_setup_prompt(&database, reload);
+                                        }
+                                    },
+                                }
+                            }
+                        }
                     }
 
                     if let Some(kind) = draft_kind {
@@ -242,7 +284,45 @@ fn load_home_data(database: &DatabaseContext, filter: HomeFilter) -> Result<Home
         eprintln!("Home draft query failed: {error}");
         "Impossible de charger le brouillon.".to_string()
     })?;
-    Ok(HomeData { documents, draft })
+    // A settings read failure must not break the home screen: the prompt
+    // simply stays hidden, and the fiche re-checks before sending anyway.
+    let show_email_setup = match load_email_settings(&connection) {
+        Ok(settings) if settings.is_configured() => false,
+        Ok(_) => match email_setup_dismissed(&connection) {
+            Ok(dismissed) => !dismissed,
+            Err(error) => {
+                eprintln!("Home settings query failed: {error}");
+                false
+            }
+        },
+        Err(error) => {
+            eprintln!("Home settings query failed: {error}");
+            false
+        }
+    };
+    Ok(HomeData {
+        documents,
+        draft,
+        show_email_setup,
+    })
+}
+
+/// « Plus tard » persists the dismissal: the prompt never nags again, the
+/// fiche keeps its disabled-send explanation as the remaining cue. If the
+/// write fails the prompt simply stays — nothing changed for her.
+fn dismiss_setup_prompt(database: &DatabaseContext, mut reload: Signal<u64>) {
+    let persisted = (|| {
+        let database = database.as_ref().ok()?;
+        let connection = database.lock().ok()?;
+        dismiss_email_setup(&connection)
+            .map_err(|error| {
+                eprintln!("Settings dismissal failed: {error}");
+            })
+            .ok()
+    })();
+    if persisted.is_some() {
+        *reload.write() += 1;
+    }
 }
 
 fn request_new_draft(
@@ -303,8 +383,47 @@ fn document_kind_label(kind: &DocumentKind) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{HomeFilter, blank_draft};
-    use crate::domain::models::DocumentKind;
+    use tempfile::NamedTempFile;
+
+    use super::{DatabaseContext, HomeFilter, blank_draft, load_home_data};
+    use crate::domain::{
+        db::{dismiss_email_setup, open_database, save_email_settings},
+        models::DocumentKind,
+    };
+
+    fn temp_context() -> (NamedTempFile, DatabaseContext) {
+        let file = NamedTempFile::new().expect("temp database file");
+        let connection = open_database(file.path()).expect("open temp database");
+        (file, Ok(std::sync::Arc::new(connection)))
+    }
+
+    #[test]
+    fn email_setup_prompt_shows_until_dismissed_or_configured() {
+        let (_file, database) = temp_context();
+
+        let data = load_home_data(&database, HomeFilter::All).expect("load home data");
+        assert!(data.show_email_setup);
+
+        {
+            let connection = database.as_ref().expect("database").lock().expect("lock");
+            dismiss_email_setup(&connection).expect("dismiss");
+        }
+        let data = load_home_data(&database, HomeFilter::All).expect("load home data");
+        assert!(!data.show_email_setup);
+    }
+
+    #[test]
+    fn email_setup_prompt_hidden_once_configured() {
+        let (_file, database) = temp_context();
+
+        {
+            let connection = database.as_ref().expect("database").lock().expect("lock");
+            save_email_settings(&connection, Some("key"), "contact@variete-saveurs.fr", "")
+                .expect("save settings");
+        }
+        let data = load_home_data(&database, HomeFilter::All).expect("load home data");
+        assert!(!data.show_email_setup);
+    }
 
     #[test]
     fn filters_map_to_the_document_query_kinds() {

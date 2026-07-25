@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Email settings (ARCHI §3 `settings`, ADR 0002, DESIGN §5 « Réglages »):
+  the Réglages screen collects the Brevo API key (password field, never
+  re-displayed once stored — the row reads « configurée » and « Modifier »
+  reveals an empty field whose submission replaces it), the sender address
+  and the optional sender name, with minimal validation (plausible email,
+  non-empty key, no network call). Values live in the `settings` table
+  through a transactional write; the key value never leaves `domain::db`
+  outside the future send path (the loaded struct only carries
+  `has_api_key`) and never reaches the logs. Until configured, a
+  non-blocking prompt on the home screen offers « Configurer » / « Plus
+  tard » (dismissal persisted) and the fiche's « Envoyer par email » stays
+  disabled with an explanation linking to Réglages — export and share keep
+  working; once configured, the button opens the compose screen (tasks
+  26/27).
 - Document duplication (CONTEXT.md « dupliquer », ARCHI §4): « Dupliquer »
   on the fiche of any issued document — quote or invoice — writes a deep
   copy into the single draft slot (client, lines and payment terms carried
