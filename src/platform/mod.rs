@@ -2,6 +2,7 @@
 //! share sheet, app paths, Brevo mail client.
 
 pub mod export;
+pub mod mail;
 pub mod paths;
 pub mod pdf_renderer;
 pub mod png_stack;

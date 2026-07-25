@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Brevo email client and branded email template (ADR 0002, ARCHI §4,
+  task 26): `platform::mail` posts to `/v3/smtp/email` via reqwest
+  blocking + rustls (webpki roots — no openssl, no device trust store)
+  with a 30 s timeout, redirects disabled so the `api-key` header can
+  never be re-POSTed elsewhere, the sender copied in BCC (off-device
+  archive) and the document attached as base64 (client-side refusal past
+  2.9 MB, under Brevo's 4 MB cap after base64 inflation). Failures reach
+  the gérante as typed French messages — invalid key (401), network,
+  API refusal with Brevo's message, oversized attachment — never a raw
+  HTTP code. `domain::email` owns the network-free side: the `Mailer`
+  trait (Brevo impl + mock), the FR subject/body per document kind built
+  from `templates/email.html` (Vitrine palette, inline-styled table
+  layout, remotely loaded logo — CID unsupported by Brevo, data URIs
+  blocked by Gmail) with HTML-escaped user text substituted last so a
+  client named « {total} » stays literal, and `interpret_response` as a
+  pure, host-tested mapping. `domain::settings` (extracted from `db.rs`,
+  which drops back near 1.3k lines) exposes `load_email_credentials` —
+  the single path where the raw key leaves storage, straight into the
+  redacted-`Debug` `MailConfig`. New deps: reqwest 0.12 (pinned, ring
+  backend for painless Android cross-compile) and base64; deny.toml
+  allows CDLA-Permissive-2.0 (webpki-roots Mozilla data); `db.rs` sheds
+  the settings block and drops to ~1.35k lines.
+
 - Email settings (ARCHI §3 `settings`, ADR 0002, DESIGN §5 « Réglages »):
   the Réglages screen collects the Brevo API key (password field, never
   re-displayed once stored — the row reads « configurée » and « Modifier »

@@ -16,11 +16,12 @@ use tokio::time::sleep;
 
 use crate::domain::{
     convert::invoice_draft_from_quote,
-    db::{get_document, load_draft, load_email_settings, save_draft},
+    db::{get_document, load_draft, save_draft},
     duplicate::duplicate_draft_from_document,
     models::{Document, DocumentInput, DocumentKind},
     money::format_eur,
     render::format_date,
+    settings::load_email_settings,
 };
 
 use super::{
@@ -621,11 +622,9 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::domain::{
-        db::{
-            get_document, issue_document, load_draft, open_database, save_draft,
-            save_email_settings,
-        },
+        db::{get_document, issue_document, load_draft, open_database, save_draft},
         models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
+        settings::save_email_settings,
     };
 
     use super::{

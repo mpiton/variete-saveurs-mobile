@@ -21,6 +21,9 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "CC0-1.0",
+    # webpki-roots 1.x (Mozilla root store data, pulled by reqwest's
+    # rustls-tls-webpki-roots — task 26 Brevo client).
+    "CDLA-Permissive-2.0",
     "ISC",
     "MIT",
     "MIT-0",
