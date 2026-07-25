@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Document duplication (CONTEXT.md « dupliquer », ARCHI §4): « Dupliquer »
+  on the fiche of any issued document — quote or invoice — writes a deep
+  copy into the single draft slot (client, lines and payment terms carried
+  over, both dates reset to the duplication day, no number and no
+  `source_quote_id`: the copy keeps no link with the original and marks
+  nothing « facturé ») and opens the form on it, so the copy goes through
+  the normal issue flow and gets a fresh number while the original stays
+  frozen. A draft with real content is confirmed away first (« Remplacer le
+  brouillon ? » — any entered date, client detail, payment terms or line
+  counts as content, per the new `DocumentInput::is_blank`); a blank one is
+  replaced silently. The draft-slot write is now shared with the conversion
+  (`persist_prefilled_draft`).
 - Quote → invoice conversion (CONTEXT.md « Conversion », ARCHI §4):
   « Convertir en facture » on the fiche of an unconverted issued quote writes
   a pre-filled invoice draft — deep copy of the client and lines, event date

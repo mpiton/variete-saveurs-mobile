@@ -82,6 +82,36 @@ impl DocumentInput {
             .map(LineInput::amount_cents)
             .fold(0_i64, i64::saturating_add)
     }
+
+    /// Whether the draft payload carries any user-entered content: a date,
+    /// a client detail, payment terms or a line (the home's blank draft
+    /// leaves them all empty, and only deliberate input fills them). Kind
+    /// never fills a draft — picking a kind carries no data.
+    pub fn is_blank(&self) -> bool {
+        let client = &self.client;
+        self.issue_date.trim().is_empty()
+            && self.event_date.trim().is_empty()
+            && self.payment_terms.trim().is_empty()
+            && self.lines.is_empty()
+            && client.name.trim().is_empty()
+            && client.address.trim().is_empty()
+            && client
+                .email
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            && client
+                .phone
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            && client
+                .business_id
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            && client
+                .billing_address
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -252,5 +282,102 @@ mod tests {
 
         document.sent_at = None;
         assert!(!document.is_sent());
+    }
+
+    fn blank_input() -> DocumentInput {
+        DocumentInput {
+            kind: DocumentKind::Quote,
+            issue_date: String::new(),
+            event_date: String::new(),
+            payment_terms: String::new(),
+            client: ClientInput {
+                kind: ClientKind::Individual,
+                name: String::new(),
+                address: String::new(),
+                email: None,
+                phone: None,
+                business_id: None,
+                billing_address: None,
+            },
+            lines: Vec::new(),
+            source_quote_id: None,
+        }
+    }
+
+    #[test]
+    fn a_draft_without_any_content_is_blank() {
+        assert!(blank_input().is_blank());
+    }
+
+    #[test]
+    fn kind_never_fills_a_blank_draft() {
+        let mut input = blank_input();
+        input.kind = DocumentKind::Invoice;
+
+        assert!(input.is_blank());
+    }
+
+    #[test]
+    fn an_entered_date_fills_the_draft() {
+        let mut by_issue_date = blank_input();
+        by_issue_date.issue_date = "2026-07-25".to_string();
+        assert!(!by_issue_date.is_blank());
+
+        let mut by_event_date = blank_input();
+        by_event_date.event_date = "2026-08-02".to_string();
+        assert!(!by_event_date.is_blank());
+    }
+
+    #[test]
+    fn any_client_detail_fills_the_draft() {
+        let mut by_name = blank_input();
+        by_name.client.name = "Marie Dupont".to_string();
+        assert!(!by_name.is_blank());
+
+        let mut by_address = blank_input();
+        by_address.client.address = "12 rue des Lilas".to_string();
+        assert!(!by_address.is_blank());
+
+        let mut by_email = blank_input();
+        by_email.client.email = Some("marie@example.com".to_string());
+        assert!(!by_email.is_blank());
+
+        let mut by_phone = blank_input();
+        by_phone.client.phone = Some("0600000000".to_string());
+        assert!(!by_phone.is_blank());
+
+        let mut by_business_id = blank_input();
+        by_business_id.client.business_id = Some("123 456 789 00010".to_string());
+        assert!(!by_business_id.is_blank());
+
+        let mut by_billing_address = blank_input();
+        by_billing_address.client.billing_address = Some("1 rue ailleurs".to_string());
+        assert!(!by_billing_address.is_blank());
+    }
+
+    #[test]
+    fn payment_terms_or_a_line_fill_the_draft() {
+        let mut by_terms = blank_input();
+        by_terms.payment_terms = "Comptant".to_string();
+        assert!(!by_terms.is_blank());
+
+        let mut by_line = blank_input();
+        by_line.lines.push(LineInput {
+            group: None,
+            description: "Pains spéciaux".to_string(),
+            quantity: 10,
+            unit_price_cents: 350,
+        });
+        assert!(!by_line.is_blank());
+    }
+
+    #[test]
+    fn whitespace_only_content_stays_blank() {
+        let mut input = blank_input();
+        input.client.name = "   ".to_string();
+        input.payment_terms = " \n ".to_string();
+        input.client.email = Some(" ".to_string());
+
+        assert!(input.is_blank());
     }
 }
