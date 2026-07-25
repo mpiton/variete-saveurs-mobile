@@ -61,7 +61,8 @@ impl ShareFlow {
             return;
         }
         self.0.write().phase = SharePhase::Running;
-        std::thread::spawn(move || {
+        let flow = self.0;
+        let worker = std::thread::Builder::new().spawn(move || {
             let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
                 let export = export_document(&input, number).map_err(|error| error.to_string())?;
                 let path = match format {
@@ -85,11 +86,20 @@ impl ShareFlow {
             };
             // Whatever the outcome, our sheet leaves: the system chooser
             // takes over on success, the error block shows on failure.
-            write_from_worker(self.0, |state| {
+            write_from_worker(flow, |state| {
                 state.phase = next;
                 state.open = false;
             });
         });
+        // Fallible spawn: a resource-starved OS must not panic the UI
+        // thread — the job goes straight to its terminal failure state.
+        if let Err(error) = worker {
+            eprintln!("Share worker could not start: {error}");
+            write_from_worker(self.0, |state| {
+                state.phase = SharePhase::Failed("Impossible de démarrer le partage.".to_string());
+                state.open = false;
+            });
+        }
     }
 }
 

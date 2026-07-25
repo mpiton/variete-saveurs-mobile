@@ -18,7 +18,9 @@ use crate::domain::{
 use super::{
     app::DatabaseContext,
     components::{Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar, issue_label},
-    issue::{ExportJobState, IssueFlow, IssuePhase, start_export, start_issue},
+    issue::{
+        ExportJobState, IssueFlow, IssuePhase, start_export, start_issue, use_export_notice_dismiss,
+    },
     share::{share_file_names, use_share_flow},
 };
 
@@ -102,6 +104,7 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
     let navigator = use_navigator();
     let export_state = use_signal_sync(|| ExportJobState::Ready);
     let share = use_share_flow();
+    use_export_notice_dismiss(export_state);
 
     // Loaded synchronously in the body; the phase signals only re-run the
     // query + render on their own transitions (identical output for a frozen

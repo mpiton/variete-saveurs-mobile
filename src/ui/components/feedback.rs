@@ -25,7 +25,16 @@ pub fn BottomSheet(
             class: if error { "bottom-sheet-layer is-error" } else { "bottom-sheet-layer" },
             aria_labelledby: title_id.clone(),
             aria_busy: loading,
-            oncancel: move |_| on_dismiss.call(()),
+            // While a job runs the sheet is not dismissible: hiding it would
+            // suggest the job is cancelled — it is not (fire-and-forget), and
+            // the worker closes the sheet itself when done.
+            oncancel: move |event| {
+                if loading {
+                    event.prevent_default();
+                } else {
+                    on_dismiss.call(());
+                }
+            },
             onmounted: move |_| {
                 let script = open_bottom_sheet_script(&mounted_id);
                 let _ = document::eval(&script);
@@ -48,7 +57,12 @@ pub fn BottomSheet(
                 class: "bottom-sheet__scrim",
                 r#type: "button",
                 aria_label: "Fermer",
-                onclick: move |_| on_dismiss.call(()),
+                disabled: loading,
+                onclick: move |_| {
+                    if !loading {
+                        on_dismiss.call(());
+                    }
+                },
             }
         }
     }

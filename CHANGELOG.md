@@ -77,8 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only, never reserved, discreet « aperçu » pill) and any issued
   document rendered exactly in an A4 iframe `srcdoc` on the neutral
   background, with pinch-zoom, pan and double-tap fit-to-width gestures,
-  and a contextual chrome action bar (Export / Share-Send buttons staged
-  disabled for tasks 19/22/26).
+  and a contextual chrome action bar (Export and Share live since tasks
+  19/22, Send staged disabled for tasks 26/27).
 - Shared `issue_label` helper and `.chrome-action-bar` style now backing
   both the form and the preview action bars.
 

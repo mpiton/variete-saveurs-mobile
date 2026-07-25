@@ -24,7 +24,7 @@ use super::{
     components::{BadgeKind, Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar, StatusBadge},
     issue::{
         ExportJobState, ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow,
-        retry_export, start_export,
+        retry_export, start_export, use_export_notice_dismiss,
     },
     share::{share_file_names, use_share_flow},
 };
@@ -87,6 +87,7 @@ pub(super) fn Record(id: i64) -> Element {
     let issue_flow = use_context::<IssueFlow>();
     let share = use_share_flow();
     let export_state = use_signal_sync(|| ExportJobState::Ready);
+    use_export_notice_dismiss(export_state);
 
     // Post-issue state published by the flow: the fiche confirms the emission
     // (snackbar) and carries the re-export path when the PDF failed (ARCHI §4
