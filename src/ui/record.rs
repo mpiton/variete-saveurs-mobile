@@ -2,9 +2,9 @@
 //! client, dates, total, status badges) with read-only collapsible lines, and
 //! the action stack in the bottom third (Règle du Pouce). An issued document
 //! is frozen (émis = figé, CONTEXT.md): this screen has no edit entry point —
-//! no button, no hidden long-press. Export, share (task 22) and conversion
-//! (task 23) are live; the remaining actions are wired as their tasks land
-//! (24 duplicate, 26/27 send) and render as disabled placeholders until then.
+//! no button, no hidden long-press. Export, share (task 22), conversion
+//! (task 23) and duplication (task 24) are live; sending is wired in tasks
+//! 26/27 and renders as a disabled placeholder until then.
 
 use std::time::Duration;
 
@@ -16,7 +16,8 @@ use tokio::time::sleep;
 use crate::domain::{
     convert::invoice_draft_from_quote,
     db::{get_document, load_draft, save_draft},
-    models::{Document, DocumentKind},
+    duplicate::duplicate_draft_from_document,
+    models::{Document, DocumentInput, DocumentKind},
     money::format_eur,
     render::format_date,
 };
@@ -98,6 +99,10 @@ pub(super) fn Record(id: i64) -> Element {
     // home's new-draft flow (task 13).
     let mut convert_confirmation = use_signal(|| false);
     let mut convert_error = use_signal(|| None::<String>);
+    // Duplication (task 24): same guard, but only a draft with real content
+    // is confirmed away — a blank one is replaced silently.
+    let mut duplicate_confirmation = use_signal(|| false);
+    let mut duplicate_error = use_signal(|| None::<String>);
 
     // Post-issue state published by the flow: the fiche confirms the emission
     // (snackbar) and carries the re-export path when the PDF failed (ARCHI §4
@@ -185,6 +190,10 @@ pub(super) fn Record(id: i64) -> Element {
             let convert_quote = document.clone();
             let confirm_database = database.clone();
             let confirm_quote = document.clone();
+            let duplicate_database = database.clone();
+            let duplicate_document = document.clone();
+            let confirm_duplicate_database = database.clone();
+            let confirm_duplicate_document = document.clone();
             let manual_export_running = matches!(&*export_state.read(), ExportJobState::Running);
             let (manual_export_notice, manual_export_error) = match &*export_state.read() {
                 ExportJobState::Done(message) => (Some(message.clone()), None),
@@ -254,6 +263,14 @@ pub(super) fn Record(id: i64) -> Element {
                         if let Some(message) = convert_error() {
                             ErrorBlock {
                                 title: "Conversion impossible".to_string(),
+                                message,
+                            }
+                        }
+                    }
+                    if !duplicate_confirmation() {
+                        if let Some(message) = duplicate_error() {
+                            ErrorBlock {
+                                title: "Duplication impossible".to_string(),
                                 message,
                             }
                         }
@@ -330,9 +347,15 @@ pub(super) fn Record(id: i64) -> Element {
                             Button {
                                 label: "Dupliquer".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Branché sur la duplication dans la tâche 24.
-                                disabled: true,
-                                onclick: move |_| {},
+                                onclick: move |_| {
+                                    request_duplication(
+                                        &duplicate_database,
+                                        &duplicate_document,
+                                        navigator,
+                                        duplicate_confirmation,
+                                        duplicate_error,
+                                    );
+                                },
                             }
                         }
                     }
@@ -388,6 +411,49 @@ pub(super) fn Record(id: i64) -> Element {
                             }
                         }
                     }
+                    BottomSheet {
+                        id: "duplicate-replace-draft-sheet".to_string(),
+                        title: "Remplacer le brouillon ?".to_string(),
+                        open: duplicate_confirmation(),
+                        error: duplicate_error().is_some(),
+                        on_dismiss: move |_| {
+                            duplicate_confirmation.set(false);
+                            duplicate_error.set(None);
+                        },
+                        p { "Le brouillon actuel sera remplacé par une copie de ce document." }
+                        if let Some(message) = duplicate_error() {
+                            ErrorBlock {
+                                title: "Duplication impossible".to_string(),
+                                message,
+                            }
+                        }
+                        div { class: "home-confirmation-actions",
+                            Button {
+                                label: "Annuler".to_string(),
+                                variant: ButtonVariant::Text,
+                                onclick: move |_| {
+                                    duplicate_confirmation.set(false);
+                                    duplicate_error.set(None);
+                                },
+                            }
+                            Button {
+                                label: "Remplacer".to_string(),
+                                onclick: move |_| {
+                                    duplicate_error.set(None);
+                                    match persist_duplication(
+                                        &confirm_duplicate_database,
+                                        &confirm_duplicate_document,
+                                    ) {
+                                        Ok(()) => {
+                                            duplicate_confirmation.set(false);
+                                            navigator.push(Route::Form {});
+                                        }
+                                        Err(message) => duplicate_error.set(Some(message)),
+                                    }
+                                },
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -423,33 +489,90 @@ fn request_conversion(
     }
 }
 
-fn draft_exists(database: &DatabaseContext) -> Result<bool, String> {
+/// « Dupliquer » entry point (CONTEXT.md « dupliquer » — correcting an
+/// issued document means duplicating it): the copy replaces the single draft
+/// slot, so a draft with real content must be confirmed away first; a blank
+/// one (an untouched home draft) is replaced silently.
+fn request_duplication(
+    database: &DatabaseContext,
+    document: &Document,
+    navigator: dioxus_router::Navigator,
+    mut confirmation: Signal<bool>,
+    mut error: Signal<Option<String>>,
+) {
+    error.set(None);
+    match filled_draft_exists(database) {
+        Ok(true) => confirmation.set(true),
+        Ok(false) => match persist_duplication(database, document) {
+            Ok(()) => {
+                navigator.push(Route::Form {});
+            }
+            Err(message) => error.set(Some(message)),
+        },
+        Err(message) => error.set(Some(message)),
+    }
+}
+
+fn load_current_draft(database: &DatabaseContext) -> Result<Option<DocumentInput>, String> {
     let database = database.as_ref().map_err(Clone::clone)?;
     let connection = database
         .lock()
         .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
-    load_draft(&connection)
-        .map(|draft| draft.is_some())
-        .map_err(|error| {
-            eprintln!("Conversion draft query failed: {error}");
-            "Impossible de vérifier le brouillon.".to_string()
-        })
+    load_draft(&connection).map_err(|error| {
+        eprintln!("Draft query failed: {error}");
+        "Impossible de vérifier le brouillon.".to_string()
+    })
+}
+
+fn draft_exists(database: &DatabaseContext) -> Result<bool, String> {
+    load_current_draft(database).map(|draft| draft.is_some())
+}
+
+fn filled_draft_exists(database: &DatabaseContext) -> Result<bool, String> {
+    load_current_draft(database).map(|draft| draft.is_some_and(|input| !input.is_blank()))
+}
+
+/// Writes a pre-filled `input` into the single draft slot; the form loads it
+/// from there, `Route::Form` has no parameter (home pattern). Shared by the
+/// conversion (task 23) and the duplication (task 24).
+fn persist_prefilled_draft(
+    database: &DatabaseContext,
+    input: &DocumentInput,
+    log_context: &'static str,
+    error_message: &'static str,
+) -> Result<(), String> {
+    let database = database.as_ref().map_err(Clone::clone)?;
+    let connection = database
+        .lock()
+        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    save_draft(&connection, input, &Utc::now().to_rfc3339()).map_err(|error| {
+        eprintln!("{log_context} draft save failed: {error}");
+        error_message.to_string()
+    })
 }
 
 /// Writes the pre-filled invoice (deep copy of the quote, dated today — the
-/// gérante adjusts it in the form) into the single draft slot; the form
-/// loads it from there, `Route::Form` has no parameter (home pattern).
+/// gérante adjusts it in the form) as the draft.
 fn persist_conversion(database: &DatabaseContext, quote: &Document) -> Result<(), String> {
-    let database = database.as_ref().map_err(Clone::clone)?;
-    let connection = database
-        .lock()
-        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
-    let now = Utc::now();
-    let input = invoice_draft_from_quote(quote, &now.format("%Y-%m-%d").to_string());
-    save_draft(&connection, &input, &now.to_rfc3339()).map_err(|error| {
-        eprintln!("Conversion draft save failed: {error}");
-        "Impossible de préparer la facture.".to_string()
-    })
+    let input = invoice_draft_from_quote(quote, &Utc::now().format("%Y-%m-%d").to_string());
+    persist_prefilled_draft(
+        database,
+        &input,
+        "Conversion",
+        "Impossible de préparer la facture.",
+    )
+}
+
+/// Writes the duplicate (deep copy of the document re-dated today, without
+/// number or `source_quote_id` — no link kept with the original) as the draft.
+fn persist_duplication(database: &DatabaseContext, document: &Document) -> Result<(), String> {
+    let input = duplicate_draft_from_document(document, &Utc::now().format("%Y-%m-%d").to_string());
+    persist_prefilled_draft(
+        database,
+        &input,
+        "Duplication",
+        "Impossible de préparer la copie.",
+    )
 }
 
 fn error_message(error: RecordError) -> (&'static str, &'static str) {
@@ -473,13 +596,13 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::domain::{
-        db::{issue_document, load_draft, open_database, save_draft},
+        db::{get_document, issue_document, load_draft, open_database, save_draft},
         models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
     };
 
     use super::{
-        DatabaseContext, RecordError, convert_action_visible, draft_exists, load_record,
-        persist_conversion,
+        DatabaseContext, RecordError, convert_action_visible, draft_exists, filled_draft_exists,
+        load_record, persist_conversion, persist_duplication,
     };
 
     fn temp_connection() -> (NamedTempFile, Mutex<Connection>) {
@@ -655,5 +778,155 @@ mod tests {
             .expect("conversion draft present");
         assert_eq!(draft.kind, DocumentKind::Invoice);
         assert_eq!(draft.source_quote_id, Some(quote.id));
+    }
+
+    #[test]
+    fn a_duplication_writes_a_copy_draft_without_a_source_link() {
+        let (_file, database) = temp_context();
+        let quote = issue_document(
+            &mut lock(&database),
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+
+        persist_duplication(&database, &quote).expect("persist duplication");
+
+        let draft = load_draft(&lock(&database))
+            .expect("load draft")
+            .expect("duplication draft present");
+        assert_eq!(draft.kind, DocumentKind::Quote);
+        assert_eq!(draft.source_quote_id, None);
+        assert_eq!(draft.client, quote.input.client);
+        assert_eq!(draft.lines, quote.input.lines);
+        assert_eq!(draft.payment_terms, quote.input.payment_terms);
+        // Both dates are reset to the duplication day (the original's
+        // 2026-07-24 / 2026-08-02 differ, so equal valid dates prove it).
+        assert_eq!(draft.issue_date, draft.event_date);
+        assert!(
+            chrono::NaiveDate::parse_from_str(&draft.issue_date, "%Y-%m-%d").is_ok(),
+            "the copy carries a valid ISO issue date: {}",
+            draft.issue_date
+        );
+    }
+
+    #[test]
+    fn duplicating_quote_10_issues_quote_11_and_leaves_quote_10_unchanged() {
+        let (_file, database) = temp_context();
+        let quote = issue_document(
+            &mut lock(&database),
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+        assert_eq!(quote.number, 10, "quote numbering starts at n° 10");
+
+        persist_duplication(&database, &quote).expect("persist duplication");
+        let draft = load_draft(&lock(&database))
+            .expect("load draft")
+            .expect("duplication draft present");
+        let copy = issue_document(&mut lock(&database), draft, "2026-07-25T10:00:00Z")
+            .expect("issue the duplicated draft");
+
+        assert_eq!(copy.number, quote.number + 1);
+        let original = get_document(&lock(&database), quote.id).expect("reload original");
+        assert_eq!(original.number, 10);
+        assert_eq!(original.input, quote.input);
+        assert_eq!(original.created_at, quote.created_at);
+    }
+
+    #[test]
+    fn a_duplicated_invoice_marks_nothing_invoiced() {
+        let (_file, database) = temp_context();
+        let quote = issue_document(
+            &mut lock(&database),
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+        let mut invoice_input = sample_input(DocumentKind::Invoice);
+        invoice_input.source_quote_id = Some(quote.id);
+        let invoice = issue_document(&mut lock(&database), invoice_input, "2026-07-25T10:00:00Z")
+            .expect("issue conversion invoice");
+
+        persist_duplication(&database, &invoice).expect("persist duplication");
+
+        let draft = load_draft(&lock(&database))
+            .expect("load draft")
+            .expect("duplication draft present");
+        assert_eq!(draft.source_quote_id, None);
+        // A copy that had kept the source link would be refused here (« Ce
+        // devis a déjà été converti en facture. ») since the quote is
+        // already invoiced — issuing it proves the link is gone.
+        let copy = issue_document(&mut lock(&database), draft, "2026-07-26T10:00:00Z")
+            .expect("issue the duplicated invoice");
+        assert_eq!(copy.source_quote_id, None);
+        let copy_record = load_record(&lock(&database), copy.id).expect("copy record");
+        assert_eq!(copy_record.source_quote_number, None);
+    }
+
+    #[test]
+    fn filled_draft_exists_ignores_a_blank_draft() {
+        let (_file, database) = temp_context();
+        assert_eq!(filled_draft_exists(&database), Ok(false));
+
+        let mut blank = sample_input(DocumentKind::Quote);
+        blank.issue_date = String::new();
+        blank.event_date = String::new();
+        blank.client.name = String::new();
+        blank.client.address = String::new();
+        blank.lines.clear();
+        save_draft(&lock(&database), &blank, "2026-07-24T09:00:00Z").expect("seed blank draft");
+        assert_eq!(filled_draft_exists(&database), Ok(false));
+
+        save_draft(
+            &lock(&database),
+            &sample_input(DocumentKind::Quote),
+            "2026-07-24T09:05:00Z",
+        )
+        .expect("seed filled draft");
+        assert_eq!(filled_draft_exists(&database), Ok(true));
+
+        let broken: DatabaseContext = Err("base indisponible".to_string());
+        assert!(filled_draft_exists(&broken).is_err());
+    }
+
+    #[test]
+    fn filled_draft_exists_treats_an_entered_date_as_content() {
+        let (_file, database) = temp_context();
+        let mut dates_only = sample_input(DocumentKind::Quote);
+        dates_only.client.name = String::new();
+        dates_only.client.address = String::new();
+        dates_only.lines.clear();
+        save_draft(&lock(&database), &dates_only, "2026-07-24T09:00:00Z")
+            .expect("seed dates-only draft");
+
+        assert_eq!(filled_draft_exists(&database), Ok(true));
+    }
+
+    #[test]
+    fn a_confirmed_duplication_replaces_the_existing_draft() {
+        let (_file, database) = temp_context();
+        save_draft(
+            &lock(&database),
+            &sample_input(DocumentKind::Invoice),
+            "2026-07-24T09:00:00Z",
+        )
+        .expect("seed unrelated draft");
+        let quote = issue_document(
+            &mut lock(&database),
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+
+        persist_duplication(&database, &quote).expect("replace draft");
+
+        let draft = load_draft(&lock(&database))
+            .expect("load draft")
+            .expect("duplication draft present");
+        assert_eq!(draft.kind, DocumentKind::Quote);
+        assert_eq!(draft.source_quote_id, None);
+        assert_eq!(draft.client, quote.input.client);
     }
 }
