@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Android Auto Backup (ARCHI §6, task 29): `allowBackup` is now declared
+  explicitly, with rules for both Android generations —
+  `res/xml/backup_rules.xml` (API 24-30) and
+  `res/xml/data_extraction_rules.xml` (API 31+, cloud backup and
+  device-to-device transfer). Both back up the SQLite database and
+  `exports/` from `getFilesDir()`, and nothing else: declaring an
+  `<include>` makes the rest opt-out, so caches and the ART profile
+  marker stay out. `paths::backup_rules_cover_stored_data` fails the
+  build if the names on disk and the names in the rules drift apart.
+  Verified on a Pixel 6 Pro (Android 16): forced backup, uninstall,
+  reinstall — database restored byte-identical (documents, catalogue,
+  numbering counters, settings) along with all exported files.
+
 - Adaptive launcher icon (DESIGN §8, task 28): the VS monogram is cut
   out of `templates/logo.png` — colour mask plus connected components,
   pastries dropped — and painted Crème Vitrine over a flat Rouge
