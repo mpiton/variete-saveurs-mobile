@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Adaptive launcher icon (DESIGN §8, task 28): the VS monogram is cut
+  out of `templates/logo.png` — colour mask plus connected components,
+  pastries dropped — and painted Crème Vitrine over a flat Rouge
+  Enseigne background. Adaptive layers plus square and round fallbacks
+  at every density (mdpi→xxxhdpi), and the foreground doubles as the
+  Android 13+ monochrome layer. `tools/gen-launcher-icon.py` regenerates
+  the whole set from the logo; `build.rs` copies `android/res/` into the
+  Gradle project, which `dx` scaffolds without it.
+
 - Compose screen (DESIGN §5, ARCHI §4 « Envoi email », task 27): the
   fiche's « Envoyer par email » now opens `/composition/:id` — recipient
   pre-filled from the client (editable, blocked with a French message
