@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 12+ (android:dataExtractionRules), which
+  take precedence over backup_rules.xml on those devices. Keep the two
+  files in sync — paths::backup_rules_cover_stored_data guards that.
+
+  The database holds the documents, the catalogue, the numbering counters
+  and the settings — including the Brevo API key, which is accepted as
+  backed up because Google stores it encrypted (ARCHI §9).
+
+  Deliberately NOT setting disableIfNoEncryptionCapabilities: a transport
+  without client-side encryption then rejects the package outright
+  (TRANSPORT_PACKAGE_REJECTED) and the backup silently never runs, which
+  is the one failure this feature exists to prevent. Verified on device.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="devis-factures.sqlite3" />
+        <include domain="file" path="exports" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="devis-factures.sqlite3" />
+        <include domain="file" path="exports" />
+    </device-transfer>
+</data-extraction-rules>

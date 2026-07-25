@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto Backup rules for Android 11 and lower (android:fullBackupContent).
+  Devices running Android 12+ read data_extraction_rules.xml instead.
+
+  Both files must list the same paths: the SQLite database and the
+  exported documents, both under getFilesDir() (domain "file", see
+  src/platform/paths.rs). Declaring an <include> makes everything else
+  opt-out, so caches and the ART profile marker stay out of the backup.
+-->
+<full-backup-content>
+    <include domain="file" path="devis-factures.sqlite3" />
+    <include domain="file" path="exports" />
+</full-backup-content>
