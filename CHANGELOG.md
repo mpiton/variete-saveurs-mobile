@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Email archive copy with a `noreply@` sender (ADR 0002): the BCC no
+  longer goes to the unread `noreply@` mailbox — `archive_address`
+  (domain, pure) maps `noreply@<domain>` to `contact@<domain>`, any
+  other sender still archives to itself.
+
 ### Added
 
 - Compose screen (DESIGN §5, ARCHI §4 « Envoi email », task 27): the

@@ -9,7 +9,7 @@ use std::time::Duration;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
-use crate::domain::email::{Attachment, MailConfig, MailError, Mailer};
+use crate::domain::email::{Attachment, MailConfig, MailError, Mailer, archive_address};
 
 const API_URL: &str = "https://api.brevo.com/v3/smtp/email";
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -43,7 +43,8 @@ impl Mailer for BrevoMailer {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|_| MailError::Network)?;
-        let payload = build_payload(config, to, subject, body_html, attachment);
+        let archive = archive_address(&config.sender_email);
+        let payload = build_payload(config, to, subject, body_html, attachment, &archive);
         let response = client
             .post(API_URL)
             .header("api-key", &config.api_key)
@@ -60,8 +61,10 @@ impl Mailer for BrevoMailer {
 struct SendPayload<'a> {
     sender: Contact<'a>,
     to: Vec<Contact<'a>>,
-    /// Every send is copied to the sender: the off-device archive that
-    /// compensates for Brevo not filling the « Sent » folder (ADR 0002).
+    /// Every send is copied to the archive address (`archive_address` —
+    /// `contact@` for a `noreply@` sender, the sender itself otherwise):
+    /// the off-device archive that compensates for Brevo not filling the
+    /// « Sent » folder (ADR 0002).
     bcc: Vec<Contact<'a>>,
     subject: &'a str,
     #[serde(rename = "htmlContent")]
@@ -90,6 +93,7 @@ fn build_payload<'a>(
     subject: &'a str,
     body_html: &'a str,
     attachment: &'a Attachment,
+    archive: &'a str,
 ) -> SendPayload<'a> {
     let sender = Contact {
         email: &config.sender_email,
@@ -102,7 +106,7 @@ fn build_payload<'a>(
             name: None,
         }],
         bcc: vec![Contact {
-            email: &config.sender_email,
+            email: archive,
             name: None,
         }],
         subject,
@@ -142,7 +146,7 @@ fn rejection_reason(body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{BrevoMailer, MAX_ATTACHMENT_BYTES, build_payload, interpret_response};
-    use crate::domain::email::{Attachment, MailConfig, MailError, Mailer};
+    use crate::domain::email::{Attachment, MailConfig, MailError, Mailer, archive_address};
 
     fn config() -> MailConfig {
         MailConfig {
@@ -211,15 +215,17 @@ mod tests {
     }
 
     #[test]
-    fn payload_copies_the_sender_in_bcc_and_encodes_the_attachment() {
+    fn payload_copies_the_archive_in_bcc_and_encodes_the_attachment() {
         let config = config();
         let attachment = attachment(b"hello".to_vec());
+        let archive = archive_address(&config.sender_email);
         let payload = build_payload(
             &config,
             "client@example.fr",
             "Devis n° 10 — Variété de Saveurs",
             "<p>corps</p>",
             &attachment,
+            &archive,
         );
         let json = serde_json::to_value(&payload).expect("serialize payload");
 
@@ -236,11 +242,39 @@ mod tests {
     }
 
     #[test]
+    fn a_noreply_sender_archives_the_copy_to_contact() {
+        let mut config = config();
+        config.sender_email = "noreply@variete-de-saveurs.fr".to_string();
+        let attachment = attachment(vec![1]);
+        let archive = archive_address(&config.sender_email);
+        let payload = build_payload(
+            &config,
+            "c@example.fr",
+            "s",
+            "<p>x</p>",
+            &attachment,
+            &archive,
+        );
+        let json = serde_json::to_value(&payload).expect("serialize payload");
+
+        assert_eq!(json["sender"]["email"], "noreply@variete-de-saveurs.fr");
+        assert_eq!(json["bcc"][0]["email"], "contact@variete-de-saveurs.fr");
+    }
+
+    #[test]
     fn sender_name_is_omitted_from_the_json_when_unset() {
         let mut config = config();
         config.sender_name = None;
         let attachment = attachment(vec![1]);
-        let payload = build_payload(&config, "c@example.fr", "s", "<p>x</p>", &attachment);
+        let archive = archive_address(&config.sender_email);
+        let payload = build_payload(
+            &config,
+            "c@example.fr",
+            "s",
+            "<p>x</p>",
+            &attachment,
+            &archive,
+        );
         let json = serde_json::to_value(&payload).expect("serialize payload");
 
         assert!(json["sender"].get("name").is_none());
