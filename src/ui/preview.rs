@@ -316,6 +316,7 @@ mod tests {
                 quantity: 10,
                 unit_price_cents: 350,
             }],
+            source_quote_id: None,
         }
     }
 
@@ -343,7 +344,6 @@ mod tests {
         let issued = issue_document(
             &mut connection,
             sample_input(DocumentKind::Quote),
-            None,
             "2026-07-23T10:00:00Z",
         )
         .expect("issue document");
@@ -373,7 +373,6 @@ mod tests {
         let issued = issue_document(
             &mut connection,
             sample_input(DocumentKind::Quote),
-            None,
             "2026-07-23T10:00:00Z",
         )
         .expect("issue document");

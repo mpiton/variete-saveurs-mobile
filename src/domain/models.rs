@@ -67,6 +67,12 @@ pub struct DocumentInput {
     pub payment_terms: String,
     pub client: ClientInput,
     pub lines: Vec<LineInput>,
+    /// Set by a conversion (F12): the invoice draft carries the source quote
+    /// up to the emission, which then marks the quote « facturé » (derived
+    /// status, CONTEXT.md). Also populated on a loaded issued invoice.
+    /// `default` so drafts persisted before this field still load.
+    #[serde(default)]
+    pub source_quote_id: Option<i64>,
 }
 
 impl DocumentInput {
@@ -150,6 +156,7 @@ mod tests {
                     unit_price_cents: 80,
                 },
             ],
+            source_quote_id: None,
         };
         assert_eq!(input.total_cents(), 6_250);
     }
@@ -196,6 +203,7 @@ mod tests {
                     unit_price_cents: 1,
                 },
             ],
+            source_quote_id: None,
         };
 
         assert_eq!(input.total_cents(), i64::MAX);
@@ -226,6 +234,7 @@ mod tests {
                     quantity: 1,
                     unit_price_cents: 850,
                 }],
+                source_quote_id: None,
             },
             total_cents: 850,
             source_quote_id: None,

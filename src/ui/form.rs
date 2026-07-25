@@ -1117,7 +1117,6 @@ mod tests {
         issue_document(
             database.get_mut().expect("lock db"),
             input,
-            None,
             "2026-07-22T10:00:00Z",
         )
         .expect("issue document");
@@ -1163,6 +1162,7 @@ mod tests {
                 quantity: 50,
                 unit_price_cents: 85,
             }],
+            source_quote_id: None,
         }
     }
 
@@ -1182,6 +1182,7 @@ mod tests {
                 billing_address: None,
             },
             lines: Vec::new(),
+            source_quote_id: None,
         }
     }
 

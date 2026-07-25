@@ -13,6 +13,8 @@ use super::validation::validate_document;
 pub enum IssueError {
     #[error("{}", .0.join("\n"))]
     Validation(Vec<String>),
+    #[error("Ce devis a déjà été converti en facture.")]
+    QuoteAlreadyInvoiced,
     #[error("Impossible d'émettre le document.")]
     Database(#[from] rusqlite::Error),
 }
@@ -93,6 +95,13 @@ pub fn migrate(connection: &Connection) -> rusqlite::Result<()> {
         BEGIN
             SELECT RAISE(ABORT, 'source_quote_id must reference a quote');
         END;
+
+        -- One quote converts into at most one invoice (CONTEXT.md
+        -- Relationships): the schema carries the invariant like the FK, the
+        -- CHECK and the trigger above, so no present or future write path
+        -- can bypass the issue_document guard.
+        CREATE UNIQUE INDEX IF NOT EXISTS documents_single_invoice_per_quote
+            ON documents(source_quote_id) WHERE source_quote_id IS NOT NULL;
 
         CREATE TABLE IF NOT EXISTS draft (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -244,7 +253,6 @@ pub fn insert_document(
     transaction: &Transaction<'_>,
     number: i64,
     input: &DocumentInput,
-    source_quote_id: Option<i64>,
     created_at: &str,
 ) -> rusqlite::Result<i64> {
     let lines_json = serde_json::to_string(&input.lines)
@@ -273,25 +281,41 @@ pub fn insert_document(
             input.client.billing_address.as_deref(),
             lines_json,
             input.total_cents(),
-            source_quote_id,
+            input.source_quote_id,
             created_at,
         ],
     )?;
     Ok(transaction.last_insert_rowid())
 }
 
+/// Issues a document from a draft input: validate, then one transaction
+/// reserving the number and inserting the row (ARCHI §4). An invoice draft
+/// born from a conversion carries `source_quote_id`; a quote converts into
+/// exactly one invoice (CONTEXT.md Relationships), so a source quote that is
+/// already invoiced is refused here — inside the transaction, before any
+/// number is reserved.
 pub fn issue_document(
     connection: &mut Connection,
     input: DocumentInput,
-    source_quote_id: Option<i64>,
     created_at: &str,
 ) -> Result<Document, IssueError> {
     validate_document(&input).map_err(IssueError::Validation)?;
     let total_cents = input.total_cents();
+    let source_quote_id = input.source_quote_id;
     let created_at = created_at.to_string();
     let transaction = connection.transaction()?;
+    if let Some(quote_id) = source_quote_id {
+        let already_invoiced = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM documents WHERE source_quote_id = ?1)",
+            [quote_id],
+            |row| row.get::<_, i64>(0),
+        )? != 0;
+        if already_invoiced {
+            return Err(IssueError::QuoteAlreadyInvoiced);
+        }
+    }
     let number = reserve_number(&transaction, &input.kind)?;
-    let id = insert_document(&transaction, number, &input, source_quote_id, &created_at)?;
+    let id = insert_document(&transaction, number, &input, &created_at)?;
     transaction.commit()?;
 
     Ok(Document {
@@ -388,6 +412,7 @@ fn document_from_row(row: &Row<'_>) -> rusqlite::Result<Document> {
     let lines = serde_json::from_str::<Vec<LineInput>>(&lines_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(lines_column, Type::Text, Box::new(error))
     })?;
+    let source_quote_id = row.get("source_quote_id")?;
 
     Ok(Document {
         id: row.get("id")?,
@@ -407,9 +432,10 @@ fn document_from_row(row: &Row<'_>) -> rusqlite::Result<Document> {
                 billing_address: row.get("client_billing_address")?,
             },
             lines,
+            source_quote_id,
         },
         total_cents: row.get("total_cents")?,
-        source_quote_id: row.get("source_quote_id")?,
+        source_quote_id,
         sent_at: row.get("sent_at")?,
         created_at: row.get("created_at")?,
         is_invoiced: row.get::<_, i64>("is_invoiced")? != 0,
@@ -491,6 +517,7 @@ mod tests {
         list_active_catalog_items, list_catalog, list_documents, load_draft, mark_sent, migrate,
         open_database, save_draft, search_clients, seed_catalog, upsert_catalog_item,
     };
+    use crate::domain::convert::invoice_draft_from_quote;
     use crate::domain::models::{
         CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput,
     };
@@ -567,6 +594,7 @@ mod tests {
                     unit_price_cents: 85,
                 },
             ],
+            source_quote_id: None,
         }
     }
 
@@ -577,9 +605,11 @@ mod tests {
         source_quote_id: Option<i64>,
         created_at: &str,
     ) -> i64 {
+        let mut input = input.clone();
+        input.source_quote_id = source_quote_id;
         let transaction = connection.transaction().expect("begin transaction");
-        let id = insert_document(&transaction, number, input, source_quote_id, created_at)
-            .expect("insert document");
+        let id =
+            insert_document(&transaction, number, &input, created_at).expect("insert document");
         transaction.commit().expect("commit document");
         id
     }
@@ -633,12 +663,34 @@ mod tests {
     }
 
     #[test]
+    fn a_draft_saved_before_source_quote_id_still_loads() {
+        let (_file, connection) = initialized_connection();
+        let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
+        let mut payload = serde_json::to_value(&input).expect("serialize draft");
+        payload
+            .as_object_mut()
+            .expect("draft payload is an object")
+            .remove("sourceQuoteId");
+        connection
+            .execute(
+                "INSERT INTO draft (id, payload_json, updated_at) VALUES (1, ?1, '2026-07-22T10:00:00Z')",
+                params![payload.to_string()],
+            )
+            .expect("insert legacy draft");
+
+        assert_eq!(
+            load_draft(&connection).expect("load legacy draft"),
+            Some(input)
+        );
+    }
+
+    #[test]
     fn issue_commits_before_later_export_failure_and_preserves_draft() {
         let (_file, mut connection) = initialized_connection();
         let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
         save_draft(&connection, &input, "2026-07-22T09:00:00Z").expect("save draft");
 
-        let issued = issue_document(&mut connection, input.clone(), None, "2026-07-22T10:00:00Z")
+        let issued = issue_document(&mut connection, input.clone(), "2026-07-22T10:00:00Z")
             .expect("issue document");
         let export_result: Result<(), &str> = Err("export failed");
 
@@ -657,7 +709,7 @@ mod tests {
             Some(input.clone())
         );
 
-        let next = issue_document(&mut connection, input, None, "2026-07-22T11:00:00Z")
+        let next = issue_document(&mut connection, input, "2026-07-22T11:00:00Z")
             .expect("issue next document");
         assert_eq!(next.number, 11);
     }
@@ -668,7 +720,7 @@ mod tests {
         let mut input = document_input(DocumentKind::Quote, " ");
         input.issue_date = " ".to_string();
 
-        let error = issue_document(&mut connection, input, None, "2026-07-22T10:00:00Z")
+        let error = issue_document(&mut connection, input, "2026-07-22T10:00:00Z")
             .expect_err("reject invalid document");
 
         let IssueError::Validation(errors) = error else {
@@ -690,13 +742,83 @@ mod tests {
     }
 
     #[test]
+    fn issue_refuses_a_source_quote_that_is_already_invoiced() {
+        let (_file, mut connection) = initialized_connection();
+        let quote = issue_document(
+            &mut connection,
+            document_input(DocumentKind::Quote, "Mairie de Lyon"),
+            "2026-07-22T09:00:00Z",
+        )
+        .expect("issue quote");
+        let mut first_invoice = document_input(DocumentKind::Invoice, "Mairie de Lyon");
+        first_invoice.source_quote_id = Some(quote.id);
+        issue_document(&mut connection, first_invoice, "2026-07-22T10:00:00Z")
+            .expect("issue first conversion");
+
+        // A stale conversion draft reaches emission after the quote was
+        // already converted: the domain refuses, in French, without
+        // consuming a number nor creating a document.
+        let mut second_invoice = document_input(DocumentKind::Invoice, "Mairie de Lyon");
+        second_invoice.source_quote_id = Some(quote.id);
+        let error = issue_document(&mut connection, second_invoice, "2026-07-22T11:00:00Z")
+            .expect_err("reject second conversion");
+
+        assert!(matches!(error, IssueError::QuoteAlreadyInvoiced));
+        assert_eq!(
+            error.to_string(),
+            "Ce devis a déjà été converti en facture."
+        );
+        assert_eq!(
+            next_number(&connection, &DocumentKind::Invoice).expect("read next number"),
+            2,
+            "only the first conversion consumed a number"
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM documents", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("count documents"),
+            2
+        );
+    }
+
+    #[test]
+    fn a_converted_quote_becomes_a_prefilled_invoice_that_marks_it_invoiced() {
+        let (_file, mut connection) = initialized_connection();
+        let quote = issue_document(
+            &mut connection,
+            document_input(DocumentKind::Quote, "Mairie de Lyon"),
+            "2026-07-22T09:00:00Z",
+        )
+        .expect("issue quote n° 10");
+        assert_eq!(quote.number, 10);
+
+        // Conversion: pre-filled invoice draft, quantity adjusted before
+        // issue — the acceptance flow of F12 (devis n° 10 → facture n° 1).
+        let mut draft = invoice_draft_from_quote(&quote, "2026-07-23");
+        draft.lines[0].quantity = 60;
+        let invoice = issue_document(&mut connection, draft, "2026-07-23T10:00:00Z")
+            .expect("issue converted invoice");
+
+        assert_eq!(invoice.number, 1, "invoice counter starts at 1");
+        assert_eq!(invoice.source_quote_id, Some(quote.id));
+        assert_eq!(invoice.input.lines[0].quantity, 60);
+        assert_eq!(invoice.input.client.name, "Mairie de Lyon");
+        let reloaded_quote = get_document(&connection, quote.id).expect("reload quote");
+        assert!(
+            reloaded_quote.is_invoiced,
+            "the quote reads back as facturé"
+        );
+    }
+
+    #[test]
     fn issue_rolls_back_reservation_when_insert_fails_before_commit() {
         let (_file, mut connection) = initialized_connection();
-        let input = document_input(DocumentKind::Invoice, "Mairie de Lyon");
+        let mut input = document_input(DocumentKind::Invoice, "Mairie de Lyon");
+        input.source_quote_id = Some(999);
 
-        let error = issue_document(&mut connection, input, Some(999), "2026-07-22T10:00:00Z")
+        let error = issue_document(&mut connection, input, "2026-07-22T10:00:00Z")
             .expect_err("reject missing source quote");
-
         assert!(matches!(error, IssueError::Database(_)));
         assert_eq!(
             next_number(&connection, &DocumentKind::Invoice).expect("read next number"),
@@ -799,6 +921,10 @@ mod tests {
         insert_raw_document(&connection, "invoice", "professional", 10, Some(1))
             .expect("insert converted invoice");
         assert!(insert_raw_document(&connection, "invoice", "individual", 11, Some(999)).is_err());
+        assert!(
+            insert_raw_document(&connection, "invoice", "professional", 11, Some(1)).is_err(),
+            "a quote converts into at most one invoice"
+        );
         assert!(
             connection
                 .execute(

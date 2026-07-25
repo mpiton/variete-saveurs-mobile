@@ -649,6 +649,7 @@ fn reference_document() -> DocumentInput {
             ),
         },
         lines,
+        source_quote_id: None,
     }
 }
 
@@ -952,7 +953,6 @@ mod tests {
         let issued = issue_document(
             &mut connection,
             reference_document(),
-            None,
             "2026-07-24T10:00:00Z",
         )
         .expect("issue document");

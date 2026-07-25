@@ -293,6 +293,7 @@ fn blank_draft(kind: DocumentKind) -> DocumentInput {
             billing_address: None,
         },
         lines: Vec::new(),
+        source_quote_id: None,
     }
 }
 

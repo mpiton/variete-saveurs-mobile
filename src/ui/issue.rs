@@ -169,12 +169,18 @@ pub(super) fn issue_draft(
         IssueFailure::Failed("Impossible d'accéder aux données locales.".to_string())
     })?;
     let now = chrono::Utc::now().to_rfc3339();
-    let document = issue_document(&mut connection, input.clone(), None, &now).map_err(|error| {
+    let document = issue_document(&mut connection, input.clone(), &now).map_err(|error| {
         match error {
             // The input was just validated with the structured validator;
             // reaching this arm means the two drifted apart — surface the
             // messages as-is rather than dropping them.
             IssueError::Validation(messages) => IssueFailure::Failed(messages.join("\n")),
+            // Stale conversion state (the quote was invoiced from another
+            // path since the draft was loaded): the domain message is
+            // user-ready French, show it as-is.
+            IssueError::QuoteAlreadyInvoiced => {
+                IssueFailure::Failed(IssueError::QuoteAlreadyInvoiced.to_string())
+            }
             IssueError::Database(error) => {
                 eprintln!("issue_document failed: {error}");
                 IssueFailure::Failed("Impossible d'émettre le document.".to_string())
@@ -404,6 +410,7 @@ mod tests {
                 quantity: 10,
                 unit_price_cents: 350,
             }],
+            source_quote_id: None,
         }
     }
 
@@ -477,6 +484,40 @@ mod tests {
         let invoice =
             issue_draft(&database, &sample_input(DocumentKind::Invoice)).expect("issue invoice");
         assert_eq!(issued_notice(&invoice), "Facture n° 1 émise");
+    }
+
+    #[test]
+    fn issue_draft_carries_the_source_quote_id_through_to_the_emission() {
+        let (_file, database) = temp_database();
+        let quote =
+            issue_draft(&database, &sample_input(DocumentKind::Quote)).expect("issue quote");
+
+        let mut conversion = sample_input(DocumentKind::Invoice);
+        conversion.source_quote_id = Some(quote.id);
+        let invoice = issue_draft(&database, &conversion).expect("issue conversion");
+
+        assert_eq!(invoice.source_quote_id, Some(quote.id));
+        let reloaded = get_document(&lock(&database), quote.id).expect("reload quote");
+        assert!(reloaded.is_invoiced, "the quote reads back as facturé");
+    }
+
+    #[test]
+    fn issue_draft_refuses_a_stale_second_conversion_in_french() {
+        let (_file, database) = temp_database();
+        let quote =
+            issue_draft(&database, &sample_input(DocumentKind::Quote)).expect("issue quote");
+        let mut conversion = sample_input(DocumentKind::Invoice);
+        conversion.source_quote_id = Some(quote.id);
+        issue_draft(&database, &conversion).expect("issue first conversion");
+
+        let mut stale = sample_input(DocumentKind::Invoice);
+        stale.source_quote_id = Some(quote.id);
+        let error = issue_draft(&database, &stale).expect_err("refuse stale conversion");
+
+        assert_eq!(
+            error,
+            IssueFailure::Failed("Ce devis a déjà été converti en facture.".to_string())
+        );
     }
 
     #[test]
