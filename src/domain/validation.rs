@@ -248,6 +248,7 @@ mod tests {
                 quantity: 50,
                 unit_price_cents: 85,
             }],
+            source_quote_id: None,
         }
     }
 

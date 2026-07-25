@@ -2,18 +2,20 @@
 //! client, dates, total, status badges) with read-only collapsible lines, and
 //! the action stack in the bottom third (Règle du Pouce). An issued document
 //! is frozen (émis = figé, CONTEXT.md): this screen has no edit entry point —
-//! no button, no hidden long-press. Export and share (task 22) are live; the
-//! remaining actions are wired as their tasks land (23 convert, 24 duplicate,
-//! 26/27 send) and render as disabled placeholders until then.
+//! no button, no hidden long-press. Export, share (task 22) and conversion
+//! (task 23) are live; the remaining actions are wired as their tasks land
+//! (24 duplicate, 26/27 send) and render as disabled placeholders until then.
 
 use std::time::Duration;
 
+use chrono::Utc;
 use dioxus::prelude::*;
 use rusqlite::Connection;
 use tokio::time::sleep;
 
 use crate::domain::{
-    db::get_document,
+    convert::invoice_draft_from_quote,
+    db::{get_document, load_draft, save_draft},
     models::{Document, DocumentKind},
     money::format_eur,
     render::format_date,
@@ -21,7 +23,10 @@ use crate::domain::{
 
 use super::{
     app::{DatabaseContext, Route},
-    components::{BadgeKind, Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar, StatusBadge},
+    components::{
+        BadgeKind, BottomSheet, Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar,
+        StatusBadge,
+    },
     issue::{
         ExportJobState, ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow,
         retry_export, start_export, use_export_notice_dismiss,
@@ -88,6 +93,11 @@ pub(super) fn Record(id: i64) -> Element {
     let share = use_share_flow();
     let export_state = use_signal_sync(|| ExportJobState::Ready);
     use_export_notice_dismiss(export_state);
+    // Conversion (task 23): `Some`-like flags for the replace-draft
+    // confirmation sheet and the last conversion failure, mirroring the
+    // home's new-draft flow (task 13).
+    let mut convert_confirmation = use_signal(|| false);
+    let mut convert_error = use_signal(|| None::<String>);
 
     // Post-issue state published by the flow: the fiche confirms the emission
     // (snackbar) and carries the re-export path when the PDF failed (ARCHI §4
@@ -171,6 +181,10 @@ pub(super) fn Record(id: i64) -> Element {
             let share_number = document.number;
             let export_input = input.clone();
             let export_number = document.number;
+            let convert_database = database.clone();
+            let convert_quote = document.clone();
+            let confirm_database = database.clone();
+            let confirm_quote = document.clone();
             let manual_export_running = matches!(&*export_state.read(), ExportJobState::Running);
             let (manual_export_notice, manual_export_error) = match &*export_state.read() {
                 ExportJobState::Done(message) => (Some(message.clone()), None),
@@ -236,6 +250,14 @@ pub(super) fn Record(id: i64) -> Element {
                             message,
                         }
                     }
+                    if !convert_confirmation() {
+                        if let Some(message) = convert_error() {
+                            ErrorBlock {
+                                title: "Conversion impossible".to_string(),
+                                message,
+                            }
+                        }
+                    }
 
                     details { class: "record-lines",
                         summary { "Prestations ({line_count})" }
@@ -294,9 +316,15 @@ pub(super) fn Record(id: i64) -> Element {
                                 Button {
                                     label: "Convertir en facture".to_string(),
                                     variant: ButtonVariant::Tonal,
-                                    // Branché sur la conversion dans la tâche 23.
-                                    disabled: true,
-                                    onclick: move |_| {},
+                                    onclick: move |_| {
+                                        request_conversion(
+                                            &convert_database,
+                                            &convert_quote,
+                                            navigator,
+                                            convert_confirmation,
+                                            convert_error,
+                                        );
+                                    },
                                 }
                             }
                             Button {
@@ -320,6 +348,46 @@ pub(super) fn Record(id: i64) -> Element {
                         png_name,
                         on_pick: move |format| share.start(share_input.clone(), share_number, format),
                     }
+                    BottomSheet {
+                        id: "convert-replace-draft-sheet".to_string(),
+                        title: "Remplacer le brouillon ?".to_string(),
+                        open: convert_confirmation(),
+                        error: convert_error().is_some(),
+                        on_dismiss: move |_| {
+                            convert_confirmation.set(false);
+                            convert_error.set(None);
+                        },
+                        p { "Le brouillon actuel sera remplacé par la facture pré-remplie depuis ce devis." }
+                        if let Some(message) = convert_error() {
+                            ErrorBlock {
+                                title: "Conversion impossible".to_string(),
+                                message,
+                            }
+                        }
+                        div { class: "home-confirmation-actions",
+                            Button {
+                                label: "Annuler".to_string(),
+                                variant: ButtonVariant::Text,
+                                onclick: move |_| {
+                                    convert_confirmation.set(false);
+                                    convert_error.set(None);
+                                },
+                            }
+                            Button {
+                                label: "Remplacer".to_string(),
+                                onclick: move |_| {
+                                    convert_error.set(None);
+                                    match persist_conversion(&confirm_database, &confirm_quote) {
+                                        Ok(()) => {
+                                            convert_confirmation.set(false);
+                                            navigator.push(Route::Form {});
+                                        }
+                                        Err(message) => convert_error.set(Some(message)),
+                                    }
+                                },
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -330,6 +398,58 @@ fn load_from_context(database: &DatabaseContext, id: i64) -> Result<RecordData, 
     let database = database.as_ref().map_err(|_| RecordError::Unavailable)?;
     let connection = database.lock().map_err(|_| RecordError::Unavailable)?;
     load_record(&connection, id)
+}
+
+/// « Convertir en facture » entry point: an existing draft must be confirmed
+/// away before the pre-filled invoice replaces it — the same guard as the
+/// home's new-document flow (task 13), since both overwrite the single draft.
+fn request_conversion(
+    database: &DatabaseContext,
+    quote: &Document,
+    navigator: dioxus_router::Navigator,
+    mut confirmation: Signal<bool>,
+    mut error: Signal<Option<String>>,
+) {
+    error.set(None);
+    match draft_exists(database) {
+        Ok(true) => confirmation.set(true),
+        Ok(false) => match persist_conversion(database, quote) {
+            Ok(()) => {
+                navigator.push(Route::Form {});
+            }
+            Err(message) => error.set(Some(message)),
+        },
+        Err(message) => error.set(Some(message)),
+    }
+}
+
+fn draft_exists(database: &DatabaseContext) -> Result<bool, String> {
+    let database = database.as_ref().map_err(Clone::clone)?;
+    let connection = database
+        .lock()
+        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    load_draft(&connection)
+        .map(|draft| draft.is_some())
+        .map_err(|error| {
+            eprintln!("Conversion draft query failed: {error}");
+            "Impossible de vérifier le brouillon.".to_string()
+        })
+}
+
+/// Writes the pre-filled invoice (deep copy of the quote, dated today — the
+/// gérante adjusts it in the form) into the single draft slot; the form
+/// loads it from there, `Route::Form` has no parameter (home pattern).
+fn persist_conversion(database: &DatabaseContext, quote: &Document) -> Result<(), String> {
+    let database = database.as_ref().map_err(Clone::clone)?;
+    let connection = database
+        .lock()
+        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    let now = Utc::now();
+    let input = invoice_draft_from_quote(quote, &now.format("%Y-%m-%d").to_string());
+    save_draft(&connection, &input, &now.to_rfc3339()).map_err(|error| {
+        eprintln!("Conversion draft save failed: {error}");
+        "Impossible de préparer la facture.".to_string()
+    })
 }
 
 fn error_message(error: RecordError) -> (&'static str, &'static str) {
@@ -353,16 +473,32 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::domain::{
-        db::{issue_document, open_database},
+        db::{issue_document, load_draft, open_database, save_draft},
         models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
     };
 
-    use super::{RecordError, convert_action_visible, load_record};
+    use super::{
+        DatabaseContext, RecordError, convert_action_visible, draft_exists, load_record,
+        persist_conversion,
+    };
 
     fn temp_connection() -> (NamedTempFile, Mutex<Connection>) {
         let file = NamedTempFile::new().expect("temp database file");
         let connection = open_database(file.path()).expect("open temp database");
         (file, connection)
+    }
+
+    fn temp_context() -> (NamedTempFile, DatabaseContext) {
+        let (file, connection) = temp_connection();
+        (file, Ok(std::sync::Arc::new(connection)))
+    }
+
+    fn lock(database: &DatabaseContext) -> std::sync::MutexGuard<'_, Connection> {
+        database
+            .as_ref()
+            .expect("database")
+            .lock()
+            .expect("lock database")
     }
 
     fn sample_input(kind: DocumentKind) -> DocumentInput {
@@ -389,6 +525,7 @@ mod tests {
                 quantity: 10,
                 unit_price_cents: 350,
             }],
+            source_quote_id: None,
         }
     }
 
@@ -399,7 +536,6 @@ mod tests {
         let quote = issue_document(
             &mut connection,
             sample_input(DocumentKind::Quote),
-            None,
             "2026-07-24T10:00:00Z",
         )
         .expect("issue quote");
@@ -417,17 +553,13 @@ mod tests {
         let quote = issue_document(
             &mut connection,
             sample_input(DocumentKind::Quote),
-            None,
             "2026-07-24T10:00:00Z",
         )
         .expect("issue quote");
-        let invoice = issue_document(
-            &mut connection,
-            sample_input(DocumentKind::Invoice),
-            Some(quote.id),
-            "2026-07-25T10:00:00Z",
-        )
-        .expect("issue conversion invoice");
+        let mut invoice_input = sample_input(DocumentKind::Invoice);
+        invoice_input.source_quote_id = Some(quote.id);
+        let invoice = issue_document(&mut connection, invoice_input, "2026-07-25T10:00:00Z")
+            .expect("issue conversion invoice");
 
         // The invoice carries a discreet reference to its source quote (n°).
         let invoice_record = load_record(&connection, invoice.id).expect("invoice record");
@@ -454,5 +586,74 @@ mod tests {
         assert!(!convert_action_visible(&DocumentKind::Quote, true));
         assert!(!convert_action_visible(&DocumentKind::Invoice, false));
         assert!(!convert_action_visible(&DocumentKind::Invoice, true));
+    }
+
+    #[test]
+    fn a_conversion_writes_a_prefilled_invoice_draft() {
+        let (_file, database) = temp_context();
+        let quote = issue_document(
+            &mut lock(&database),
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+
+        persist_conversion(&database, &quote).expect("persist conversion");
+
+        let draft = load_draft(&lock(&database))
+            .expect("load draft")
+            .expect("conversion draft present");
+        assert_eq!(draft.kind, DocumentKind::Invoice);
+        assert_eq!(draft.source_quote_id, Some(quote.id));
+        assert_eq!(draft.client, quote.input.client);
+        assert_eq!(draft.lines, quote.input.lines);
+        assert_eq!(draft.event_date, quote.input.event_date);
+        assert!(
+            chrono::NaiveDate::parse_from_str(&draft.issue_date, "%Y-%m-%d").is_ok(),
+            "the invoice draft carries a valid ISO issue date: {}",
+            draft.issue_date
+        );
+    }
+
+    #[test]
+    fn draft_exists_tracks_the_draft_slot() {
+        let (_file, database) = temp_context();
+        assert_eq!(draft_exists(&database), Ok(false));
+
+        save_draft(
+            &lock(&database),
+            &sample_input(DocumentKind::Quote),
+            "2026-07-24T09:00:00Z",
+        )
+        .expect("seed draft");
+        assert_eq!(draft_exists(&database), Ok(true));
+
+        let broken: DatabaseContext = Err("base indisponible".to_string());
+        assert!(draft_exists(&broken).is_err());
+    }
+
+    #[test]
+    fn a_confirmed_conversion_replaces_the_existing_draft() {
+        let (_file, database) = temp_context();
+        save_draft(
+            &lock(&database),
+            &sample_input(DocumentKind::Invoice),
+            "2026-07-24T09:00:00Z",
+        )
+        .expect("seed unrelated draft");
+        let quote = issue_document(
+            &mut lock(&database),
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+
+        persist_conversion(&database, &quote).expect("replace draft");
+
+        let draft = load_draft(&lock(&database))
+            .expect("load draft")
+            .expect("conversion draft present");
+        assert_eq!(draft.kind, DocumentKind::Invoice);
+        assert_eq!(draft.source_quote_id, Some(quote.id));
     }
 }

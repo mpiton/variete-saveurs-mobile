@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Quote → invoice conversion (CONTEXT.md « Conversion », ARCHI §4):
+  « Convertir en facture » on the fiche of an unconverted issued quote writes
+  a pre-filled invoice draft — deep copy of the client and lines, event date
+  and payment terms carried over, issue date set to today, everything
+  editable — and opens the form on it; an existing draft is confirmed away
+  first (« Remplacer le brouillon ? », same guard as the home's new-document
+  flow). `DocumentInput` carries `source_quote_id` through the draft slot and
+  the autosave up to the emission (drafts persisted before the field still
+  load), the emission then marks the quote « facturé » (derived status — the
+  quote is never written) and the action disappears. The domain refuses a
+  second conversion with « Ce devis a déjà été converti en facture. » inside
+  the emission transaction, before any number is reserved, and a partial
+  unique index on `source_quote_id` carries the same invariant in the schema
+  alongside the existing foreign key, CHECK and trigger.
 - Document sharing (ARCHI §4 « Partage »): « Partager » on the fiche and the
   aperçu opens a bottom sheet offering the real file names (« devis-12.pdf »
   / « devis-12.png »), then a worker re-exports any missing file
@@ -28,8 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client, dates, payment terms, total, « envoyé »/« facturé » badges) with
   read-only collapsible lines, and the action stack in a sticky bottom-third
   chrome bar (Règle du Pouce). « Aperçu » opens the full-screen preview;
-  send, convert and duplicate render as disabled placeholders until tasks
-  23–27 wire them. « Convertir en facture » only appears on an
+  send and duplicate render as disabled placeholders until tasks 24–27 wire
+  them. « Convertir en facture » only appears on an
   unconverted quote (derived `is_invoiced`, task 08), and a converted invoice
   discreetly references its source quote number. An issued document stays
   frozen — no edit entry point anywhere. The post-emission snackbar and the
