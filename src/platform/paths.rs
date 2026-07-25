@@ -80,26 +80,40 @@ mod tests {
 
     /// A backup that silently stops covering the accounting data is worse than
     /// no backup, so the rules for both Android generations are checked against
-    /// the names actually used on disk.
+    /// the names actually used on disk. Each section is checked on its own:
+    /// losing a path from `device-transfer` only would go unnoticed otherwise,
+    /// and the data would vanish when she moves to a new phone.
     #[test]
     fn backup_rules_cover_stored_data() {
-        const RULES: [(&str, &str); 2] = [
+        const BACKUP_RULES: &str = include_str!("../../android/res/xml/backup_rules.xml");
+        const EXTRACTION_RULES: &str =
+            include_str!("../../android/res/xml/data_extraction_rules.xml");
+        const SECTIONS: [(&str, &str, &str); 3] = [
+            ("backup_rules.xml", "full-backup-content", BACKUP_RULES),
             (
-                "backup_rules.xml",
-                include_str!("../../android/res/xml/backup_rules.xml"),
+                "data_extraction_rules.xml",
+                "cloud-backup",
+                EXTRACTION_RULES,
             ),
             (
                 "data_extraction_rules.xml",
-                include_str!("../../android/res/xml/data_extraction_rules.xml"),
+                "device-transfer",
+                EXTRACTION_RULES,
             ),
         ];
 
-        for (file, rules) in RULES {
+        for (file, section, rules) in SECTIONS {
+            let body = rules
+                .split_once(&format!("<{section}>"))
+                .and_then(|(_, rest)| rest.split_once(&format!("</{section}>")))
+                .map(|(body, _)| body)
+                .unwrap_or_else(|| panic!("{file} must declare a <{section}> section"));
+
             for name in [DATABASE_FILE_NAME, EXPORTS_DIR_NAME] {
                 let entry = format!(r#"domain="file" path="{name}""#);
                 assert!(
-                    rules.contains(&entry),
-                    "{file} must back up {name} (missing `{entry}`)"
+                    body.contains(&entry),
+                    "<{section}> in {file} must back up {name} (missing `{entry}`)"
                 );
             }
         }
