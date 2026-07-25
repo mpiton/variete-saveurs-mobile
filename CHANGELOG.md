@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Compose screen (DESIGN §5, ARCHI §4 « Envoi email », task 27): the
+  fiche's « Envoyer par email » now opens `/composition/:id` — recipient
+  pre-filled from the client (editable, blocked with a French message
+  while empty or implausible via `plausible_email`), subject and branded
+  HTML body pre-filled from `render_email` (the « valable jusqu'au »
+  sentence reuses `render::validity_end_date`, now `pub(crate)`, so the
+  email never contradicts the document), all freely retouchable and
+  never persisted. The PDF ○ PNG radio (PDF default, real file names)
+  drives the attachment: `export_document` regenerates a missing file
+  on the fly, then a worker thread sends via `BrevoMailer` — the
+  database lock never wraps the network call (credentials read under a
+  short lock, `mark_sent` under a fresh one). One call, one verdict:
+  success marks the document sent (`mark_sent` keeps the FIRST
+  `sent_at` on resends), publishes « Email envoyé » through the new
+  app-level `SendNotice` context and navigates back — the fiche reloads
+  from the database, so the « envoyé » badge is already there and shows
+  the snackbar (auto-dismissed, cleared on unmount); failure stays as a
+  persistent French `ErrorBlock`, retry possible. Double-tap is guarded
+  by the send phase (button loading). New `OutlinedTextArea` component
+  (multiline counterpart of `OutlinedField`) for the body. The
+  `#[expect(dead_code)]` on `mod domain` is gone — this screen wired the
+  last domain API without a UI caller. Validated on a physical phone
+  (real Brevo send, « envoyé » badge on fiche and home, `sent_at` kept
+  on resend) and on emulator with radios cut (persistent French network
+  error, retry reaching the API).
+
 - Brevo email client and branded email template (ADR 0002, ARCHI §4,
   task 26): `platform::mail` posts to `/v3/smtp/email` via reqwest
   blocking + rustls (webpki roots — no openssl, no device trust store)

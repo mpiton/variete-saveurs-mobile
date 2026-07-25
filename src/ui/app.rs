@@ -23,6 +23,7 @@ use crate::{
 
 use super::{
     catalog::Catalog,
+    compose::{Compose, SendNotice},
     form::Form,
     home::Home,
     issue::{IssueFlow, IssuePhase},
@@ -180,8 +181,8 @@ pub(super) enum Route {
         Record { id: i64 },
         #[route("/apercu?:document")]
         Preview { document: Option<i64> },
-        #[route("/composition")]
-        Compose {},
+        #[route("/composition/:id")]
+        Compose { id: i64 },
         #[route("/catalogue")]
         Catalog {},
         #[route("/reglages")]
@@ -195,7 +196,7 @@ impl Route {
             Self::Form {} => "Formulaire",
             Self::Record { .. } => "Fiche",
             Self::Preview { .. } => "Aperçu",
-            Self::Compose {} => "Composition",
+            Self::Compose { .. } => "Composition",
             Self::Catalog {} => "Catalogue",
             Self::Settings {} => "Réglages",
         }
@@ -206,6 +207,10 @@ pub fn app() -> Element {
     let _database = use_context_provider(initialize_database);
     let issue_flow = use_signal_sync(|| IssuePhase::Idle);
     use_context_provider(move || IssueFlow(issue_flow));
+    // Post-send notice (task 27): the compose screen publishes « Email
+    // envoyé » right before navigating back, the fiche displays and clears it.
+    let send_notice = use_signal(|| None::<String>);
+    use_context_provider(move || SendNotice(send_notice));
     let history = use_hook(|| Rc::new(AppHistory::new(document::document())));
     let history_context = history.clone();
     use_context_provider(move || history_context);
@@ -435,23 +440,6 @@ fn AppShell() -> Element {
     }
 }
 
-#[component]
-fn Compose() -> Element {
-    rsx! { Placeholder { title: "Composition", description: "Composition de l’envoi à venir." } }
-}
-
-#[component]
-fn Placeholder(title: &'static str, description: &'static str) -> Element {
-    rsx! {
-        section { class: "screen",
-            div { class: "placeholder-panel",
-                h2 { "{title}" }
-                p { "{description}" }
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
@@ -516,7 +504,7 @@ mod tests {
                 "/apercu?document=42",
                 "Aperçu",
             ),
-            (Route::Compose {}, "/composition", "Composition"),
+            (Route::Compose { id: 42 }, "/composition/42", "Composition"),
             (Route::Catalog {}, "/catalogue", "Catalogue"),
             (Route::Settings {}, "/reglages", "Réglages"),
         ];

@@ -576,6 +576,47 @@ input[aria-busy="true"]:disabled {
     opacity: 0.38;
 }
 
+/* Multiline variant (compose screen email body, task 27): same outline and
+   floating label as the single-line field, sized for a long message. */
+.outlined-field textarea {
+    width: 100%;
+    min-height: 12rem;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-control);
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-family: inherit;
+    font-size: var(--type-body-medium-size);
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.outlined-field textarea::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
+}
+
+.outlined-field textarea:focus {
+    border-color: var(--color-primary);
+}
+
+.outlined-field textarea:focus-visible + label {
+    color: var(--color-primary);
+}
+
+.outlined-field textarea[aria-invalid="true"] {
+    border-color: var(--color-danger);
+}
+
+.outlined-field textarea[aria-invalid="true"] + label {
+    color: var(--color-danger);
+}
+
+.outlined-field textarea:disabled + label {
+    opacity: 0.38;
+}
+
 .outlined-field__spinner {
     position: absolute;
     top: 20px;
@@ -1341,4 +1382,55 @@ input[aria-busy="true"]:disabled {
 .record-action-hint a {
     color: var(--color-on-chrome);
     font-weight: 700;
+}
+
+/* Compose screen (task 27): one task — write and send. The attachment
+   choice is a real radio group with the real file names, the send action
+   lives in the bottom third (Règle du Pouce). */
+.compose-screen {
+    min-height: 100%;
+}
+
+.compose-format {
+    display: grid;
+    gap: var(--touch-gap);
+    margin: 0;
+    padding: var(--space-md);
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+}
+
+.compose-format legend {
+    padding: 0 4px;
+    color: var(--color-label);
+    font-size: var(--type-label-medium-size);
+    font-weight: 700;
+}
+
+.compose-format__option {
+    display: flex;
+    min-height: var(--touch-target);
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: var(--type-body-large-size);
+}
+
+.compose-format__option input {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    accent-color: var(--color-primary);
+}
+
+.compose-sticky {
+    position: sticky;
+    bottom: 0;
+    margin-top: auto;
+}
+
+.compose-action-bar {
+    display: grid;
+    margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
+    margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
 }
