@@ -2,10 +2,9 @@
 //! client, dates, total, status badges) with read-only collapsible lines, and
 //! the action stack in the bottom third (Règle du Pouce). An issued document
 //! is frozen (émis = figé, CONTEXT.md): this screen has no edit entry point —
-//! no button, no hidden long-press. Export, share (task 22), conversion
-//! (task 23) and duplication (task 24) are live; sending is gated on the
-//! Brevo configuration (task 25) and opens the compose screen wired in
-//! tasks 26/27.
+//! no button, no hidden long-press. Export, share (task 22), sending (task
+//! 27), conversion (task 23) and duplication (task 24) are live; sending is
+//! gated on the Brevo configuration (task 25).
 
 use std::time::Duration;
 
@@ -30,6 +29,7 @@ use super::{
         BadgeKind, BottomSheet, Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar,
         StatusBadge,
     },
+    compose::SendNotice,
     issue::{
         ExportJobState, ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow,
         retry_export, start_export, use_export_notice_dismiss,
@@ -154,6 +154,26 @@ pub(super) fn Record(id: i64) -> Element {
     // fiche and the aperçu).
     let reset_flow = issue_flow;
     use_drop(move || reset_issue_flow(reset_flow));
+
+    // Post-send snackbar (task 27): the compose screen publishes « Email
+    // envoyé » just before navigating back here. Same auto-dismiss
+    // discipline as the other notices, and cleared on unmount so it never
+    // reappears on a later visit.
+    let mut send_notice = use_context::<SendNotice>();
+    let send_notice_message = send_notice.0.read().clone();
+    let send_notice_effect = send_notice_message.clone();
+    use_effect(move || {
+        if let Some(expected) = send_notice_effect.clone() {
+            spawn(async move {
+                sleep(NOTICE_DURATION).await;
+                if send_notice.0.peek().as_deref() == Some(expected.as_str()) {
+                    send_notice.0.set(None);
+                }
+            });
+        }
+    });
+    let mut send_notice_on_drop = send_notice;
+    use_drop(move || send_notice_on_drop.0.set(None));
 
     match load_from_context(&database, id) {
         Err(error) => {
@@ -341,11 +361,10 @@ pub(super) fn Record(id: i64) -> Element {
                             Button {
                                 label: "Envoyer par email".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Gated on the Brevo configuration (task 25);
-                                // the compose screen itself is tasks 26/27.
+                                // Gated on the Brevo configuration (task 25).
                                 disabled: !data.email_configured,
                                 onclick: move |_| {
-                                    navigator.push(Route::Compose {});
+                                    navigator.push(Route::Compose { id });
                                 },
                             }
                             if !data.email_configured {
@@ -386,6 +405,9 @@ pub(super) fn Record(id: i64) -> Element {
                         }
                     }
                     if let Some(message) = manual_export_notice {
+                        Snackbar { message }
+                    }
+                    if let Some(message) = send_notice_message {
                         Snackbar { message }
                     }
                     if let Some(message) = notice {

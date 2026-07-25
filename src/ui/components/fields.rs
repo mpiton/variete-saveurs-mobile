@@ -62,6 +62,46 @@ fn field_id(name: &str, suffix: Option<&str>) -> String {
     }
 }
 
+/// Multiline counterpart of `OutlinedField` (same floating label, error and
+/// disabled styling) for long free text — the compose screen's email body
+/// (task 27). No loading state: nothing async ever fills it.
+#[component]
+pub fn OutlinedTextArea(
+    label: String,
+    name: String,
+    value: String,
+    oninput: EventHandler<FormEvent>,
+    #[props(default)] id_suffix: Option<String>,
+    #[props(default)] placeholder: String,
+    #[props(default)] disabled: bool,
+    #[props(default)] error: Option<String>,
+) -> Element {
+    let input_id = field_id(&name, id_suffix.as_deref());
+    let error_id = format!("{input_id}-error");
+    let has_error = error.is_some();
+    let error_reference = error.as_ref().map(|_| error_id.clone());
+
+    rsx! {
+        div {
+            class: "outlined-field outlined-field--multiline",
+            textarea {
+                id: input_id.clone(),
+                name,
+                value,
+                placeholder,
+                disabled,
+                aria_invalid: has_error,
+                aria_describedby: error_reference,
+                oninput: move |event| oninput.call(event),
+            }
+            label { r#for: input_id, "{label}" }
+            if let Some(ref message) = error {
+                p { id: error_id, class: "outlined-field__error", role: "alert", "{message}" }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::field_id;

@@ -44,6 +44,21 @@ pub struct EmailContent {
     pub body_html: String,
 }
 
+/// Off-device archive address of a send (ADR 0002 — the BCC copy). A
+/// `noreply@` sender is a mailbox nobody reads, so the archive goes to
+/// `contact@` on the same domain instead; any other sender archives to
+/// itself.
+pub fn archive_address(sender_email: &str) -> String {
+    let Some((local, domain)) = sender_email.split_once('@') else {
+        return sender_email.to_string();
+    };
+    if local.eq_ignore_ascii_case("noreply") {
+        format!("contact@{domain}")
+    } else {
+        sender_email.to_string()
+    }
+}
+
 /// Sending configuration assembled from `settings` at send time
 /// (`settings::load_email_credentials`) — the only path where the raw Brevo
 /// key leaves storage.
@@ -140,7 +155,9 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
 mod tests {
     use std::cell::RefCell;
 
-    use super::{Attachment, EmailPlaceholders, MailConfig, MailError, Mailer, render_email};
+    use super::{
+        Attachment, EmailPlaceholders, MailConfig, MailError, Mailer, archive_address, render_email,
+    };
     use crate::domain::models::DocumentKind;
 
     fn quote_values() -> EmailPlaceholders {
@@ -309,6 +326,26 @@ mod tests {
                 .to_string()
                 .contains("taille maximale")
         );
+    }
+
+    #[test]
+    fn a_noreply_sender_archives_to_contact_on_the_same_domain() {
+        assert_eq!(
+            archive_address("noreply@variete-de-saveurs.fr"),
+            "contact@variete-de-saveurs.fr"
+        );
+        assert_eq!(archive_address("NoReply@example.fr"), "contact@example.fr");
+    }
+
+    #[test]
+    fn any_other_sender_archives_to_itself() {
+        assert_eq!(
+            archive_address("contact@variete-de-saveurs.fr"),
+            "contact@variete-de-saveurs.fr"
+        );
+        assert_eq!(archive_address("marie@example.fr"), "marie@example.fr");
+        // A malformed sender is kept as-is: it surfaces at send time anyway.
+        assert_eq!(archive_address("sans-arobase"), "sans-arobase");
     }
 
     #[test]

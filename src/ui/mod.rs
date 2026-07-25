@@ -4,6 +4,7 @@
 mod app;
 mod catalog;
 mod components;
+mod compose;
 mod form;
 mod home;
 mod issue;

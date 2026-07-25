@@ -333,7 +333,10 @@ pub(crate) fn format_date(value: &str) -> String {
         .unwrap_or_else(|_| value.to_string())
 }
 
-fn validity_end_date(issue_date: &str) -> Option<String> {
+/// « Validité de l'offre » = émission + 30 jours, en date d'affichage
+/// française. Rule shared with the compose screen (task 27): the email's
+/// « valable jusqu'au » never contradicts the document.
+pub(crate) fn validity_end_date(issue_date: &str) -> Option<String> {
     NaiveDate::parse_from_str(issue_date, "%Y-%m-%d")
         .ok()
         .and_then(|date| date.checked_add_days(chrono::Days::new(30)))
