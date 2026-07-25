@@ -9,6 +9,7 @@ mod home;
 mod issue;
 mod preview;
 mod record;
+mod settings;
 mod share;
 
 pub use app::app;

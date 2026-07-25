@@ -28,6 +28,7 @@ use super::{
     issue::{IssueFlow, IssuePhase},
     preview::Preview,
     record::Record,
+    settings::Settings,
 };
 
 const APP_CSS: Asset = asset!("/assets/app.css");
@@ -437,11 +438,6 @@ fn AppShell() -> Element {
 #[component]
 fn Compose() -> Element {
     rsx! { Placeholder { title: "Composition", description: "Composition de l’envoi à venir." } }
-}
-
-#[component]
-fn Settings() -> Element {
-    rsx! { Placeholder { title: "Réglages", description: "Configuration de l’application à venir." } }
 }
 
 #[component]

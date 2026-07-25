@@ -217,11 +217,52 @@ pub fn validate_catalog_items(items: &[CatalogItem]) -> Result<(), Vec<String>> 
     }
 }
 
+/// Minimal plausibility for an email address: one `@`, a non-empty local
+/// part without spaces, a dotted domain. Deliberately not RFC-complete — a
+/// wrong address or key surfaces at send time (tasks 26/27), not here.
+pub fn plausible_email(value: &str) -> bool {
+    let trimmed = value.trim();
+    let Some((local, domain)) = trimmed.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && !local.contains(char::is_whitespace)
+        && domain.contains('.')
+        && !domain.contains('@')
+        && !domain.contains(char::is_whitespace)
+        && domain.split('.').all(|label| !label.is_empty())
+}
+
+/// Settings screen gate (task 25): the API key is required only until one is
+/// stored (« configurée • modifier » keeps it), the sender email must be
+/// plausible. No network verification at this stage.
+pub fn validate_email_settings(
+    new_api_key: Option<&str>,
+    key_already_saved: bool,
+    sender_email: &str,
+) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    let key_typed = new_api_key
+        .map(str::trim)
+        .is_some_and(|key| !key.is_empty());
+    if !key_typed && !key_already_saved {
+        errors.push("La clé API Brevo est obligatoire.".to_string());
+    }
+    if !plausible_email(sender_email) {
+        errors.push("L'adresse email de l'expéditeur semble invalide.".to_string());
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         DocumentField, FieldError, validate_catalog_items, validate_document,
-        validate_document_fields,
+        validate_document_fields, validate_email_settings,
     };
     use crate::domain::models::{
         CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput,
@@ -581,5 +622,39 @@ mod tests {
             .collect();
 
         assert_eq!(flat, structured);
+    }
+
+    #[test]
+    fn email_settings_validation_requires_a_key_once() {
+        // Nothing saved yet and nothing typed: the key is required.
+        assert!(validate_email_settings(None, false, "contact@variete-saveurs.fr").is_err());
+        // A saved key makes the field optional (« configurée • modifier »).
+        assert!(validate_email_settings(None, true, "contact@variete-saveurs.fr").is_ok());
+        // A typed key satisfies the requirement.
+        assert!(
+            validate_email_settings(Some("xoxb-key"), false, "contact@variete-saveurs.fr").is_ok()
+        );
+        // Whitespace-only input is no input.
+        assert!(validate_email_settings(Some("   "), false, "contact@variete-saveurs.fr").is_err());
+    }
+
+    #[test]
+    fn email_settings_validation_checks_a_plausible_email() {
+        for email in [
+            "",
+            "   ",
+            "sans-arobase",
+            "a@b",
+            "a@b.",
+            "@b.fr",
+            "a @b.fr",
+            "a@@b.fr",
+        ] {
+            assert!(
+                validate_email_settings(Some("k"), false, email).is_err(),
+                "{email} should be rejected"
+            );
+        }
+        assert!(validate_email_settings(Some("k"), false, " contact@variete-saveurs.fr ").is_ok());
     }
 }

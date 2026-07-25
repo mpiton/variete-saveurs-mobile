@@ -3,8 +3,9 @@
 //! the action stack in the bottom third (Règle du Pouce). An issued document
 //! is frozen (émis = figé, CONTEXT.md): this screen has no edit entry point —
 //! no button, no hidden long-press. Export, share (task 22), conversion
-//! (task 23) and duplication (task 24) are live; sending is wired in tasks
-//! 26/27 and renders as a disabled placeholder until then.
+//! (task 23) and duplication (task 24) are live; sending is gated on the
+//! Brevo configuration (task 25) and opens the compose screen wired in
+//! tasks 26/27.
 
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use tokio::time::sleep;
 
 use crate::domain::{
     convert::invoice_draft_from_quote,
-    db::{get_document, load_draft, save_draft},
+    db::{get_document, load_draft, load_email_settings, save_draft},
     duplicate::duplicate_draft_from_document,
     models::{Document, DocumentInput, DocumentKind},
     money::format_eur,
@@ -46,6 +47,10 @@ pub(super) struct RecordData {
     /// Number of the quote this invoice was converted from — the reference
     /// the gérante recognizes, shown discreetly on the invoice.
     pub source_quote_number: Option<i64>,
+    /// Email sending gate (task 25): the Brevo key + sender live in
+    /// `settings`; without them « Envoyer par email » stays disabled with an
+    /// explanation, while export and share keep working.
+    pub email_configured: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,9 +79,19 @@ pub(super) fn load_record(connection: &Connection, id: i64) -> Result<RecordData
         },
         None => None,
     };
+    // A settings read failure must not break the fiche: sending simply stays
+    // gated off, exactly as if nothing were configured yet.
+    let email_configured = match load_email_settings(connection) {
+        Ok(settings) => settings.is_configured(),
+        Err(error) => {
+            eprintln!("Record settings query failed: {error}");
+            false
+        }
+    };
     Ok(RecordData {
         document,
         source_quote_number,
+        email_configured,
     })
 }
 
@@ -325,9 +340,19 @@ pub(super) fn Record(id: i64) -> Element {
                             Button {
                                 label: "Envoyer par email".to_string(),
                                 variant: ButtonVariant::Tonal,
-                                // Branché sur l’envoi Brevo dans les tâches 26/27.
-                                disabled: true,
-                                onclick: move |_| {},
+                                // Gated on the Brevo configuration (task 25);
+                                // the compose screen itself is tasks 26/27.
+                                disabled: !data.email_configured,
+                                onclick: move |_| {
+                                    navigator.push(Route::Compose {});
+                                },
+                            }
+                            if !data.email_configured {
+                                p { class: "record-action-hint",
+                                    "Envoi indisponible : configurez la clé Brevo et l’expéditeur dans "
+                                    Link { to: Route::Settings {}, "Réglages" }
+                                    "."
+                                }
                             }
                             if show_convert {
                                 Button {
@@ -596,7 +621,10 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use crate::domain::{
-        db::{get_document, issue_document, load_draft, open_database, save_draft},
+        db::{
+            get_document, issue_document, load_draft, open_database, save_draft,
+            save_email_settings,
+        },
         models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
     };
 
@@ -667,6 +695,27 @@ mod tests {
         assert_eq!(record.document.number, quote.number);
         assert_eq!(record.source_quote_number, None);
         assert!(!record.document.is_invoiced);
+    }
+
+    #[test]
+    fn the_send_action_follows_the_email_configuration() {
+        let (_file, database) = temp_connection();
+        let mut connection = database.lock().expect("lock database");
+        let quote = issue_document(
+            &mut connection,
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+
+        // Unconfigured: the fiche keeps « Envoyer par email » disabled.
+        let record = load_record(&connection, quote.id).expect("record");
+        assert!(!record.email_configured);
+
+        save_email_settings(&connection, Some("key"), "contact@variete-saveurs.fr", "")
+            .expect("save settings");
+        let record = load_record(&connection, quote.id).expect("record");
+        assert!(record.email_configured);
     }
 
     #[test]
