@@ -21,6 +21,10 @@ fn project_file(path: &str) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
 }
 
+fn position_of(haystack: &[u8], needle: &[u8; 4]) -> Option<usize> {
+    haystack.windows(4).position(|window| window == needle)
+}
+
 /// Body of a CSS rule, matched on the exact selector at the start of a line so
 /// `.splash` never picks up `.splash__video`.
 fn rule_body<'a>(css: &'a str, selector: &str) -> &'a str {
@@ -62,13 +66,29 @@ fn the_video_asset_stays_inside_the_apk_budget_and_carries_no_sound() {
         "splash-loop.mp4 is {size} bytes, over the {MAX_VIDEO_BYTES} byte APK budget"
     );
     assert_eq!(&bytes[4..8], b"ftyp", "not an MP4 container");
-    // Sample entry fourccs in the sample description box.
+
+    // Scan the header boxes only. The `mdat` payload is compressed frames, and
+    // a four-byte needle does hit them by chance — `vide` already matches
+    // inside this file's payload. `+faststart` is what puts the header first,
+    // and the player needs it anyway to start decoding before the whole file
+    // is read.
+    let mdat = position_of(&bytes, b"mdat").expect("no mdat box");
+    let moov = position_of(&bytes, b"moov").expect("no moov box");
     assert!(
-        bytes.windows(4).any(|window| window == b"avc1"),
+        moov < mdat,
+        "moov must precede mdat — re-encode with `-movflags +faststart`"
+    );
+    let header = &bytes[..mdat];
+
+    // Sample entry fourcc in the sample description box.
+    assert!(
+        position_of(header, b"avc1").is_some(),
         "no H.264 track — the Android WebView may refuse to play it"
     );
+    // The track handler, not a codec fourcc: `soun` covers every audio codec,
+    // where rejecting `mp4a` alone still lets Opus or MP3 through.
     assert!(
-        !bytes.windows(4).any(|window| window == b"mp4a"),
+        position_of(header, b"soun").is_none(),
         "the splash video must have no audio track"
     );
 }
@@ -190,24 +210,34 @@ fn reduced_motion_freezes_the_first_frame_and_the_logo() {
 
 /// `app.css` is a linked asset: until it arrives the overlay is a plain block
 /// and the home screen paints through it unstyled, logo at full width. The
-/// inline pre-render style has to carry the geometry that makes it cover.
+/// inline pre-render style has to carry the geometry that makes it cover, and
+/// the animations too — an animation started late by a slow stylesheet is still
+/// mid-fade when `SPLASH_DURATION` unmounts the overlay.
 #[test]
 fn the_overlay_covers_the_screen_before_the_stylesheet_arrives() {
     let app_rs = project_file("src/ui/app.rs");
+    // The terminator is `);` at the start of a line: `min(46%,220px);` inside
+    // the declarations carries the same two characters.
     let pre_render = app_rs
         .split("const PRE_RENDER_STYLE")
         .nth(1)
-        .and_then(|rest| rest.split(");").next())
+        .and_then(|rest| rest.split("\n);").next())
         .expect("PRE_RENDER_STYLE in src/ui/app.rs");
 
     for declaration in [
         ".splash{position:fixed;inset:0;z-index:10;",
         "place-items:center",
         // Without a backdrop the overlay is transparent and hides nothing.
-        "background:#0F3F3A}",
+        // Trailing `;`, so this cannot match the `html,body,#main` rule.
+        "background:#0F3F3A;",
         ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
         // Unsized, the logo renders at its full intrinsic width.
-        ".splash__logo{position:relative;width:min(46%,220px)}",
+        ".splash__logo{position:relative;width:min(46%,220px);",
+        "@keyframes splash-out{to{opacity:0}}",
+        "@keyframes splash-logo-in{from{opacity:0.6;transform:scale(0.96)}}",
+        // Animations shipped without their override would run under « Remove
+        // animations » for as long as the stylesheet takes to arrive.
+        "@media(prefers-reduced-motion:reduce){.splash,.splash__logo{animation:none}}",
     ] {
         assert!(
             pre_render.contains(declaration),
@@ -219,6 +249,22 @@ fn the_overlay_covers_the_screen_before_the_stylesheet_arrives() {
     let css = project_file("assets/app.css");
     assert!(rule_body(&css, ".splash__logo").contains("width: min(46%, 220px);"));
     assert!(rule_body(&css, ".splash").contains("place-items: center;"));
+
+    // Same timings too: a different value in the stylesheet is a new
+    // `animation-name`/duration, which restarts the animation when it lands.
+    let (fade, fade_delay) = animation_timings(rule_body(&css, ".splash"));
+    let (logo, logo_delay) = animation_timings(rule_body(&css, ".splash__logo"));
+    for declaration in [
+        format!("animation:splash-out {fade}ms ease-in {fade_delay}ms both}}"),
+        format!(
+            "animation:splash-logo-in {logo}ms cubic-bezier(0.165,0.84,0.44,1) {logo_delay}ms both}}"
+        ),
+    ] {
+        assert!(
+            pre_render.contains(&declaration),
+            "PRE_RENDER_STYLE must contain `{declaration}`"
+        );
+    }
 }
 
 /// `use_future` spawns while the component renders, before Dioxus has patched

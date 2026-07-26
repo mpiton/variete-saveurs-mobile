@@ -22,15 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overlay fades out at 2 s — 2.24 s in total, inside the 2.5 s budget.
   The backdrop is the `--color-chrome` token the top app bar already
   uses, which is what shows if the video cannot be decoded; nothing
-  waits on the app, since the database opens before the first paint. Playback is started from script rather than an `autoplay`
+  waits on the app, since the database opens before the first paint.
+  Playback is started from script rather than an `autoplay`
   attribute, so under `prefers-reduced-motion: reduce` the loop is
   stopped on its first frame and the logo is left un-animated. It is
   stopped rather than never started because a `<video>` the WebView has
   no decoded frame for paints its own grey play button over the overlay;
   for the same reason the element stays transparent until `loadeddata`.
-  The overlay geometry is repeated in the inline pre-render style, since
+  The overlay rules are repeated in the inline pre-render style, since
   the stylesheet is a linked asset and until it arrives the overlay would
-  not cover the home screen. The logo reuses the PNG `domain::render`
+  not cover the home screen. The animations are repeated for a second
+  reason: their clock starts when the rule reaches the element, while the
+  Rust dismissal counts from mount, so a stylesheet arriving late enough
+  left the overlay part-way through its fade when the overlay was
+  dropped. The logo reuses the PNG `domain::render`
   already embeds instead of shipping a second copy, so the video is the
   only thing the splash adds to the APK (+1.17 MiB).
   `MainActivity` turns off `mediaPlaybackRequiresUserGesture`, without

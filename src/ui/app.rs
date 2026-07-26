@@ -39,14 +39,22 @@ const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str = concat!(
     "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}",
     "@media(prefers-color-scheme:dark){html,body,#main{background:#0C2B27}}",
-    // Splash geometry, mirroring `app.css`: the overlay must cover the screen
-    // on the very first paint, or the home screen shows through it unstyled
-    // for as long as the stylesheet takes to arrive. Timings stay in the
-    // stylesheet — arriving late only shifts the fade, it shows nothing wrong.
-    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#0F3F3A}",
+    // The splash, mirroring `app.css`: the overlay must cover the screen on the
+    // very first paint, or the home screen shows through it unstyled for as
+    // long as the stylesheet takes to arrive. The animations belong here for
+    // the same reason — their clock starts when the rule reaches the element,
+    // while `SPLASH_DURATION` counts from mount, so a stylesheet δ ms late
+    // leaves the overlay at δ/240 opacity when Rust drops it. The values are
+    // the stylesheet's, so it re-declaring them restarts nothing.
+    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#0F3F3A;animation:splash-out 240ms ease-in 2000ms both}",
     "@media(prefers-color-scheme:dark){.splash{background:#0C2B27}}",
     ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
-    ".splash__logo{position:relative;width:min(46%,220px)}",
+    ".splash__logo{position:relative;width:min(46%,220px);animation:splash-logo-in 240ms cubic-bezier(0.165,0.84,0.44,1) 300ms both}",
+    "@keyframes splash-out{to{opacity:0}}",
+    "@keyframes splash-logo-in{from{opacity:0.6;transform:scale(0.96)}}",
+    // Travels with the animations above: shipping them without it is what
+    // would actually let the splash animate under « Remove animations ».
+    "@media(prefers-reduced-motion:reduce){.splash,.splash__logo{animation:none}}",
 );
 const BACK_EVENT_BRIDGE: &str = r#"
     window.addEventListener("popstate", event => {
