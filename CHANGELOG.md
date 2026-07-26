@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The app is called « Variété de Saveurs » on the phone. `dx` scaffolds a
+  `strings.xml` naming it after the crate, so the icon on her home screen, the
+  app switcher and every share sheet read « DevisMobile » — a developer's name
+  for it, and not the one the documents and the emails already carry. Ours is
+  copied over `dx`'s by the `build.rs` that was already replacing its
+  `styles.xml`, so no new mechanism. Verified on the built APK, where
+  `application-label` now reads the marque, accent included.
+
 - The release process in `CLAUDE.md` now describes the sequence that actually
   produces the APK we ship. Step 5 claimed `dx build --platform android
   --release --device` emitted one signed with the keystore. It does not: dx
