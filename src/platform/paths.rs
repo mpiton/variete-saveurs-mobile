@@ -17,9 +17,21 @@ pub enum PathError {
 /// so `backup_rules_cover_stored_data` ties the two together.
 const DATABASE_FILE_NAME: &str = "devis-factures.sqlite3";
 const EXPORTS_DIR_NAME: &str = "exports";
+const UPDATES_DIR_NAME: &str = "updates";
 
 pub fn exports_dir() -> Result<PathBuf, PathError> {
     Ok(app_files_dir()?.join(EXPORTS_DIR_NAME))
+}
+
+/// Where a downloaded APK waits for the installer (issue 35). Under the cache
+/// directory, not `getFilesDir()`, for two reasons: Android reclaims it under
+/// storage pressure, and the backup rules above only enumerate what belongs in
+/// the backup — a 30 MB APK landing next to them would eat the 25 MB quota
+/// that the accounting data depends on.
+pub fn updates_dir() -> Result<PathBuf, PathError> {
+    let directory = app_cache_dir()?.join(UPDATES_DIR_NAME);
+    std::fs::create_dir_all(&directory)?;
+    Ok(directory)
 }
 
 pub fn database_path() -> Result<PathBuf, PathError> {
@@ -33,6 +45,18 @@ fn database_path_from(directory: PathBuf) -> Result<PathBuf, PathError> {
 
 #[cfg(target_os = "android")]
 fn app_files_dir() -> Result<PathBuf, PathError> {
+    android_dir("getFilesDir")
+}
+
+#[cfg(target_os = "android")]
+fn app_cache_dir() -> Result<PathBuf, PathError> {
+    android_dir("getCacheDir")
+}
+
+/// Both app-private roots are one `Context` getter apart, and both return a
+/// `java.io.File`, so they share the attach-and-unwrap dance.
+#[cfg(target_os = "android")]
+fn android_dir(getter: &'static str) -> Result<PathBuf, PathError> {
     use jni::JavaVM;
     use jni::objects::{JObject, JString};
 
@@ -43,7 +67,7 @@ fn app_files_dir() -> Result<PathBuf, PathError> {
         let raw_context = unsafe { JObject::from_raw(android.context().cast()) };
         let context = env.new_global_ref(&raw_context)?;
         let directory = env
-            .call_method(context.as_obj(), "getFilesDir", "()Ljava/io/File;", &[])?
+            .call_method(context.as_obj(), getter, "()Ljava/io/File;", &[])?
             .l()?;
         let value = env
             .call_method(directory, "getAbsolutePath", "()Ljava/lang/String;", &[])?
@@ -53,7 +77,7 @@ fn app_files_dir() -> Result<PathBuf, PathError> {
     })();
 
     path.map_err(|error| {
-        eprintln!("Android filesDir lookup failed: {error}");
+        eprintln!("Android {getter} lookup failed: {error}");
         PathError::PrivateStorage
     })
 }
@@ -61,6 +85,11 @@ fn app_files_dir() -> Result<PathBuf, PathError> {
 #[cfg(not(target_os = "android"))]
 fn app_files_dir() -> Result<PathBuf, PathError> {
     Ok(std::env::temp_dir().join("devis-mobile"))
+}
+
+#[cfg(not(target_os = "android"))]
+fn app_cache_dir() -> Result<PathBuf, PathError> {
+    Ok(std::env::temp_dir().join("devis-mobile-cache"))
 }
 
 #[cfg(test)]

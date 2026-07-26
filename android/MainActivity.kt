@@ -187,20 +187,24 @@ class MainActivity : WryActivity() {
 }
 
 /**
- * Read-only provider exposing the app-private `files/exports/` directory to
- * the share sheet (ACTION_SEND needs a content:// URI). Kept in this file
- * because the Dioxus build only compiles the activity referenced from
- * Dioxus.toml.
+ * Read-only provider over one app-private directory: an Intent that carries a
+ * file needs a content:// URI, and neither the share sheet nor the package
+ * installer may be handed anything outside the directory it is meant to read.
+ * That containment check lives here once rather than in each subclass — two
+ * copies of a path-traversal guard is one copy too many.
+ *
+ * Kept in this file because the Dioxus build only compiles the activity
+ * referenced from Dioxus.toml.
  */
-class ExportFileProvider : ContentProvider() {
+abstract class PrivateFileProvider : ContentProvider() {
+    /** Directory this provider is allowed to serve, and nothing above it. */
+    protected abstract fun rootDir(): File
+
+    protected abstract fun mimeFor(path: String): String
+
     override fun onCreate(): Boolean = true
 
-    override fun getType(uri: Uri): String = when {
-        uri.path.orEmpty().endsWith(".pdf") -> "application/pdf"
-        uri.path.orEmpty().endsWith(".png") -> "image/png"
-        uri.path.orEmpty().endsWith(".html") -> "text/html"
-        else -> "application/octet-stream"
-    }
+    override fun getType(uri: Uri): String = mimeFor(uri.path.orEmpty())
 
     override fun query(
         uri: Uri,
@@ -225,11 +229,34 @@ class ExportFileProvider : ContentProvider() {
     override fun delete(uri: Uri, selection: String?, args: Array<out String>?): Int = 0
 
     private fun fileFor(uri: Uri): File {
-        val exportsDir = File(context!!.filesDir, "exports").canonicalFile
-        val file = File(exportsDir, uri.path.orEmpty().removePrefix("/")).canonicalFile
-        if (!file.path.startsWith(exportsDir.path + File.separator) || !file.isFile) {
-            throw IllegalArgumentException("path outside exports: ${uri.path}")
+        val root = rootDir().canonicalFile
+        val file = File(root, uri.path.orEmpty().removePrefix("/")).canonicalFile
+        if (!file.path.startsWith(root.path + File.separator) || !file.isFile) {
+            throw IllegalArgumentException("path outside ${root.name}: ${uri.path}")
         }
         return file
     }
+}
+
+/** `files/exports/` for the share sheet (ACTION_SEND). */
+class ExportFileProvider : PrivateFileProvider() {
+    override fun rootDir(): File = File(context!!.filesDir, "exports")
+
+    override fun mimeFor(path: String): String = when {
+        path.endsWith(".pdf") -> "application/pdf"
+        path.endsWith(".png") -> "image/png"
+        path.endsWith(".html") -> "text/html"
+        else -> "application/octet-stream"
+    }
+}
+
+/**
+ * `cache/updates/` for the downloaded APK (issue 35). The cache, not
+ * `filesDir`: the Auto Backup rules cover what sits beside the database, and
+ * a release APK would eat the 25 MB quota her accounting depends on.
+ */
+class UpdateFileProvider : PrivateFileProvider() {
+    override fun rootDir(): File = File(context!!.cacheDir, "updates")
+
+    override fun mimeFor(path: String): String = "application/vnd.android.package-archive"
 }

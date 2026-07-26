@@ -1500,9 +1500,20 @@ input[aria-busy="true"]:disabled {
 }
 
 /* Specificity must beat `.screen p` (0,1,1), which sets a muted color. */
-.settings-screen .settings-key-status__label {
+.settings-screen .settings-key-status__label,
+.settings-screen .settings-update__version,
+.settings-screen .settings-update__status {
     color: var(--color-ink);
     font-weight: 500;
+}
+
+/* Update section (issue 35): the APK is sideloaded, so this screen is the only
+   place a new version is ever announced — and the only place to say that a
+   mise à jour keeps her comptabilité where uninstalling would destroy it. The
+   rule sets that line apart from the muted paragraph it would otherwise be. */
+.settings-screen .settings-update__safety {
+    padding-left: var(--space-sm);
+    border-left: 2px solid var(--color-border);
 }
 
 /* Only present past SEARCH_THRESHOLD documents: the field and its clear button
