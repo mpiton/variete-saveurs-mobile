@@ -1,27 +1,36 @@
 :root {
     color-scheme: light;
-    --color-bg: #F3F6F5;
+    /* DESIGN.md §2 — the app runs on the document's own palette. Seven of
+       these are the Vitrine tokens verbatim (`../app/src-tauri/templates/
+       document.css`); the rest are derived from them. */
+    --color-bg: #F6F0E2;
     --color-surface: #FFFFFF;
-    --color-surface-dim: #E9EEEC;
-    --color-ink: #191C1B;
-    --color-muted: #55605C;
-    --color-label: #3F4A46;
-    --color-border: #D5DDDA;
-    --color-border-soft: #E2E8E5;
-    --color-chrome: #0F3F3A;
+    --color-surface-dim: #ECE3CF;
+    --color-ink: #4A2C1A;
+    --color-muted: #6B5A4E;
+    --color-label: #5A4535;
+    --color-border: #DCD0B8;
+    --color-border-soft: #E9E1CE;
+    /* Rouge Enseigne darkened to the tone the splash loop sits at, so the
+       system window, the overlay and the top app bar are one colour. */
+    --color-chrome: #6B1220;
     --color-on-chrome: #FFFFFF;
-    --color-on-chrome-muted: #A8C8C2;
-    --color-primary: #0F766E;
+    --color-on-chrome-muted: #EBA4AE;
+    --color-primary: #C0182B;
     --color-on-primary: #FFFFFF;
-    --color-primary-tint: #E7F2EE;
-    --color-danger: #B91C1C;
-    --color-danger-tint: rgb(185 28 28 / 0.08);
+    --color-primary-tint: #F7E3E5;
+    /* DESIGN.md §2 — the error red cannot be told apart from the brand red by
+       contrast (no legible red clears 3:1 against #C0182B), so the two are
+       separated by role: primary fills, danger only outlines and labels, and
+       always under a French message. M3's own error tone. */
+    --color-danger: #B3261E;
+    --color-danger-tint: rgb(179 38 30 / 0.08);
     /* DESIGN.md §4 — the tone a bottom sheet or a menu rises to. Equal to the
        surface here; only the dark scheme actually has a step above it. */
     --color-elevated: #FFFFFF;
-    --color-shadow: rgb(25 28 27 / 0.24);
-    --color-state-pressed: rgb(25 28 27 / 0.12);
-    --color-tap-highlight: rgb(15 118 110 / 0.18);
+    --color-shadow: rgb(74 44 26 / 0.24);
+    --color-state-pressed: rgb(74 44 26 / 0.12);
+    --color-tap-highlight: rgb(192 24 43 / 0.18);
 
     --type-title-large-size: 1.375rem;
     --type-title-large-weight: 500;
@@ -64,35 +73,38 @@
 @media (prefers-color-scheme: dark) {
     :root {
         color-scheme: dark;
-        --color-bg: #101413;
-        --color-surface: #1A201E;
+        --color-bg: #17110D;
+        --color-surface: #221A14;
         /* M3 tonal elevation reverses in the dark: a surface rises by
            getting lighter, so the dim tone sits above the plain one. */
-        --color-surface-dim: #242B29;
-        --color-ink: #E2E8E6;
-        --color-muted: #A3AFAB;
-        --color-label: #B9C4C0;
-        --color-border: #33403C;
-        --color-border-soft: #283330;
-        --color-chrome: #0C2B27;
-        --color-primary: #58B5A9;
-        --color-on-primary: #06302B;
-        /* A dark teal container: the pale light tint only reaches 2.1:1
+        --color-surface-dim: #2E241C;
+        --color-ink: #EFE5D6;
+        --color-muted: #B3A493;
+        --color-label: #C8BAA7;
+        --color-border: #443729;
+        --color-border-soft: #33291F;
+        --color-chrome: #4A0C16;
+        /* Rouge Enseigne is too dark to carry text on a dark surface (2.7:1);
+           Rose Praline is the palette's own lightened red. */
+        --color-primary: #EBA4AE;
+        --color-on-primary: #4A0511;
+        /* A dark red container: the pale light tint only reaches 1.9:1
            under the lightened primary that sits on it. */
-        --color-primary-tint: #16332E;
-        /* The light red drops to 2.6:1 on the dark surface. */
+        --color-primary-tint: #3A181C;
+        /* Kept off the lightened primary's hue: danger kept its salmon while
+           primary moved to rose, so the two still read apart at a glance. */
         --color-danger: #F2938C;
         --color-danger-tint: rgb(242 147 140 / 0.12);
         /* A sheet painted `--color-surface` lands on cards of that same token:
            1.07:1, no edge. Tonal elevation is the M3 answer here — a shadow
            cannot separate two dark greys. */
-        --color-elevated: #242B29;
-        /* `#191C1B` is darker than the page, so the light shadow is inert. */
+        --color-elevated: #2E241C;
+        /* `#4A2C1A` is darker than the page, so the light shadow is inert. */
         --color-shadow: rgb(0 0 0 / 0.60);
         /* State layers invert with the scheme: `on-surface` lightens what it
            covers. Darkening a near-black surface moves it by ~2 L*. */
-        --color-state-pressed: rgb(226 232 230 / 0.14);
-        --color-tap-highlight: rgb(88 181 169 / 0.24);
+        --color-state-pressed: rgb(239 229 214 / 0.14);
+        --color-tap-highlight: rgb(235 164 174 / 0.24);
     }
 }
 
@@ -954,7 +966,7 @@ input[aria-busy="true"]:disabled {
 }
 
 .bottom-sheet-layer::backdrop {
-    background: rgb(10 20 18 / 0.45);
+    background: rgb(30 18 10 / 0.45);
 }
 
 .bottom-sheet__scrim {
@@ -1480,7 +1492,7 @@ input[aria-busy="true"]:disabled {
     margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
 }
 
-/* DESIGN.md §8 — the in-app splash. The chrome teal behind the video is what
+/* DESIGN.md §8 — the in-app splash. The chrome red behind the video is what
    makes the hand-off invisible: the loop fades out onto the same colour the
    top app bar is painted in. */
 .splash {

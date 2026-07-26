@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The app runs on the document's palette (DESIGN §2, task 33): the
+  deep-teal « Le Comptoir » scheme is gone. Seven light tokens are now the
+  Vitrine values verbatim (`bg` = Crème Vitrine #F6F0E2, `ink` = Brun
+  Cacao, `surface-dim` = Filet, `muted` = Gris, `on-chrome-muted` and the
+  dark `primary` = Rose Praliné, `primary` = Rouge Enseigne), the rest
+  derive from them, and the screen stops being a second universe next to
+  the paper. `chrome` is #6B1220 — Rouge Enseigne darkened to the tone
+  measured in the splash loop, so the system window, the video and the top
+  app bar are one colour through the cold start; white on it reads 12.12:1,
+  slightly better than the teal it replaces. Dark `primary` moves to Rose
+  Praliné because Rouge Enseigne only reaches 2.7:1 on a dark surface.
+  `danger` becomes M3's own #B3261E and changes role rather than hue: no
+  legible red clears 3:1 against the brand red, so the two are told apart
+  by what they do — primary fills, danger only outlines and labels, always
+  under a French message. `PRE_RENDER_STYLE`, both `vs_colors.xml` and the
+  two `MainActivity` chrome constants follow, and a new test walks `src/`,
+  `assets/` and `android/` to fail on any surviving teal literal. No logic
+  changed; `templates/document.css` is untouched, so the exported A4 is
+  byte-identical.
+
 ### Fixed
 
 - Email archive copy with a `noreply@` sender (ADR 0002): the BCC no
@@ -46,8 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frontmatter are applied as specified; `surface-dim`, `label`,
   `border-soft`, `primary-tint` and `danger` have no dark counterpart
   there and are derived — `surface-dim` rises *above* `surface` (M3 tonal
-  elevation reverses in the dark), `primary-tint` becomes a dark teal
-  container, and `danger` is lightened because #B91C1C only reaches
+  elevation reverses in the dark), `primary-tint` becomes a dark red
+  container, and `danger` is lightened because the light one only reaches
   2.6:1 on the dark surface. The fourteen token pairs the components
   paint are checked at WCAG AA in `tests/ui_foundation.rs` (worst pair
   5.56:1), and a companion test pins the only three colours left outside
@@ -62,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the theme's `isLightTheme`, so under the scaffolded `.Light` parent the
   dark stylesheet would never have matched on a device. The pre-render
   style, the theme's `windowBackground` and the activity window all carry
-  both chromes so the light teal no longer flashes at startup on a dark
+  both chromes so the light chrome no longer flashes at startup on a dark
   phone, and `uiMode` is declared in `configChanges` so switching themes
   repaints the app without recreating the activity. The A4 preview stays
   white in both schemes — it is paper.

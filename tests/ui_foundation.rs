@@ -76,34 +76,35 @@ fn contrast_ratio(foreground: &str, background: &str) -> f64 {
 fn light_palette_matches_the_design_and_meets_aa_contrast() {
     let css = project_file("assets/app.css");
     let expected = [
-        ("--color-bg", "#F3F6F5"),
+        ("--color-bg", "#F6F0E2"),
         ("--color-surface", "#FFFFFF"),
-        ("--color-surface-dim", "#E9EEEC"),
-        ("--color-ink", "#191C1B"),
-        ("--color-muted", "#55605C"),
-        ("--color-label", "#3F4A46"),
-        ("--color-border", "#D5DDDA"),
-        ("--color-border-soft", "#E2E8E5"),
-        ("--color-chrome", "#0F3F3A"),
+        ("--color-surface-dim", "#ECE3CF"),
+        ("--color-ink", "#4A2C1A"),
+        ("--color-muted", "#6B5A4E"),
+        ("--color-label", "#5A4535"),
+        ("--color-border", "#DCD0B8"),
+        ("--color-border-soft", "#E9E1CE"),
+        ("--color-chrome", "#6B1220"),
         ("--color-on-chrome", "#FFFFFF"),
-        ("--color-on-chrome-muted", "#A8C8C2"),
-        ("--color-primary", "#0F766E"),
+        ("--color-on-chrome-muted", "#EBA4AE"),
+        ("--color-primary", "#C0182B"),
         ("--color-on-primary", "#FFFFFF"),
-        ("--color-primary-tint", "#E7F2EE"),
-        ("--color-danger", "#B91C1C"),
+        ("--color-primary-tint", "#F7E3E5"),
+        ("--color-danger", "#B3261E"),
     ];
 
     for (name, value) in expected {
         assert_eq!(css_token(&css, name), value);
     }
 
-    // Lowercased on both sides: `#c0182b` is the same red to a browser.
+    // The Vitrine hues are now the app's own (DESIGN.md §2), so only the
+    // typography half of the old rule survives: the serif stays on the
+    // letterhead. Lowercased, `Georgia` and `georgia` are the same font.
     let folded = css.to_ascii_lowercase();
-    for forbidden in [
-        "#c0182b", "#c49a45", "#eba4ae", "#f6f0e2", "#4a2c1a", "georgia",
-    ] {
-        assert!(!folded.contains(forbidden), "app CSS contains {forbidden}");
-    }
+    assert!(
+        !folded.contains("georgia"),
+        "the serif belongs to the document"
+    );
 
     assert!(
         contrast_ratio(
@@ -132,6 +133,64 @@ fn light_palette_matches_the_design_and_meets_aa_contrast() {
     );
 }
 
+/// The teal « Le Comptoir » scheme was dropped for the document's own palette
+/// (DESIGN.md §2). Its hexes survived in four places at once — the stylesheet,
+/// the inline pre-render style, the Android theme colour and the activity's
+/// window background — so the guard sweeps the whole app rather than the CSS.
+#[test]
+fn no_teal_survives_in_the_app_chrome() {
+    fn walk(directory: &Path, files: &mut Vec<std::path::PathBuf>) {
+        let entries = fs::read_dir(directory)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, files);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+
+    // Hex forms plus the decimal triples MainActivity.kt paints the window
+    // with — a plain hex sweep would walk straight past `Color.rgb(15, 63, 58)`.
+    const TEAL: [&str; 10] = [
+        "#0f3f3a",
+        "#0c2b27",
+        "#0f766e",
+        "#58b5a9",
+        "#e7f2ee",
+        "#16332e",
+        "#a8c8c2",
+        "#06302b",
+        "15, 63, 58",
+        "12, 43, 39",
+    ];
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    // `templates/` is the A4 document and keeps its own palette; it has no teal
+    // either, but it is deliberately out of this guard's reach.
+    for directory in ["src", "assets", "android"] {
+        walk(&root.join(directory), &mut files);
+    }
+
+    let mut offenders = Vec::new();
+    for path in files {
+        // The splash loop is a video, not text: reading it as UTF-8 fails.
+        let Ok(contents) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let folded = contents.to_ascii_lowercase();
+        for teal in TEAL {
+            if folded.contains(teal) {
+                offenders.push(format!("{} contains {teal}", path.display()));
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "teal survives: {offenders:#?}");
+}
+
 #[test]
 fn dark_palette_matches_the_design_and_meets_aa_contrast() {
     let css = project_file("assets/app.css");
@@ -140,18 +199,18 @@ fn dark_palette_matches_the_design_and_meets_aa_contrast() {
     // DESIGN.md frontmatter (dark-*) is normative for these eight.
     // The rest are derived here; see the CSS comments for the rationale.
     let expected = [
-        ("--color-bg", "#101413"),
-        ("--color-surface", "#1A201E"),
-        ("--color-surface-dim", "#242B29"),
-        ("--color-ink", "#E2E8E6"),
-        ("--color-muted", "#A3AFAB"),
-        ("--color-label", "#B9C4C0"),
-        ("--color-border", "#33403C"),
-        ("--color-border-soft", "#283330"),
-        ("--color-chrome", "#0C2B27"),
-        ("--color-primary", "#58B5A9"),
-        ("--color-on-primary", "#06302B"),
-        ("--color-primary-tint", "#16332E"),
+        ("--color-bg", "#17110D"),
+        ("--color-surface", "#221A14"),
+        ("--color-surface-dim", "#2E241C"),
+        ("--color-ink", "#EFE5D6"),
+        ("--color-muted", "#B3A493"),
+        ("--color-label", "#C8BAA7"),
+        ("--color-border", "#443729"),
+        ("--color-border-soft", "#33291F"),
+        ("--color-chrome", "#4A0C16"),
+        ("--color-primary", "#EBA4AE"),
+        ("--color-on-primary", "#4A0511"),
+        ("--color-primary-tint", "#3A181C"),
         ("--color-danger", "#F2938C"),
     ];
     for (name, value) in expected {
@@ -344,7 +403,7 @@ fn every_hardcoded_color_outside_the_tokens_is_scheme_agnostic() {
         // The A4 is paper. DESIGN.md §2 keeps it white in both schemes.
         "#FFFFFF",
         // Scrim value pinned by DESIGN.md §4.
-        "rgb(10 20 18 / 0.45)",
+        "rgb(30 18 10 / 0.45)",
         // `.icon-button` only ever sits on the chrome, which is dark in both
         // schemes: white at 12% stays a visible press state either way.
         "rgb(255 255 255 / 0.12)",

@@ -122,10 +122,10 @@ class MainActivity : WryActivity() {
 
     private fun applySystemBarAppearance(config: Configuration = resources.configuration) {
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            // The status bar always sits on the teal chrome.
+            // The status bar always sits on the red chrome.
             isAppearanceLightStatusBars = false
             // The navigation bar sits on the content background on most
-            // screens; the form and the preview end on the teal action bar,
+            // screens; the form and the preview end on the red action bar,
             // where dark icons are wrong — but only in the light scheme.
             isAppearanceLightNavigationBars = !isNightMode(config)
         }
@@ -140,8 +140,8 @@ class MainActivity : WryActivity() {
     }
 
     private companion object {
-        val CHROME_COLOR_LIGHT: Int = Color.rgb(15, 63, 58)
-        val CHROME_COLOR_DARK: Int = Color.rgb(12, 43, 39)
+        val CHROME_COLOR_LIGHT: Int = Color.rgb(107, 18, 32)
+        val CHROME_COLOR_DARK: Int = Color.rgb(74, 12, 22)
         val REPLAY_DELAYS_MS = longArrayOf(0L, 300L, 1000L, 3000L)
     }
 }

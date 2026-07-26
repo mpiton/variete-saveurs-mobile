@@ -1,5 +1,5 @@
 //! DESIGN §8: the in-app splash loops `assets/splash-loop.mp4` behind the real
-//! `templates/logo.png`, on the chrome teal, for at most 2.5 s. The asset is
+//! `templates/logo.png`, on the chrome red, for at most 2.5 s. The asset is
 //! committed and the timings are split between CSS and Rust — this guards the
 //! file, keeps the two halves in step, and pins the reduced-motion contract.
 
@@ -94,13 +94,13 @@ fn the_video_asset_stays_inside_the_apk_budget_and_carries_no_sound() {
 }
 
 #[test]
-fn the_splash_paints_on_the_chrome_teal_so_the_hand_off_is_invisible() {
+fn the_splash_paints_on_the_chrome_red_so_the_hand_off_is_invisible() {
     let css = project_file("assets/app.css");
     let splash = rule_body(&css, ".splash");
 
     assert!(
         splash.contains("background: var(--color-chrome);"),
-        "the splash backdrop must be the chrome token, not a hard-coded teal"
+        "the splash backdrop must be the chrome token, not a hard-coded red"
     );
     assert!(
         splash.contains("position: fixed;") && splash.contains("inset: 0;"),
@@ -229,7 +229,7 @@ fn the_overlay_covers_the_screen_before_the_stylesheet_arrives() {
         "place-items:center",
         // Without a backdrop the overlay is transparent and hides nothing.
         // Trailing `;`, so this cannot match the `html,body,#main` rule.
-        "background:#0F3F3A;",
+        "background:#6B1220;",
         ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
         // Unsized, the logo renders at its full intrinsic width.
         ".splash__logo{position:relative;width:min(46%,220px);",

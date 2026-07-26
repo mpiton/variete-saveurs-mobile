@@ -35,10 +35,10 @@ use super::{
 
 const APP_CSS: Asset = asset!("/assets/app.css");
 /// Painted before the stylesheet lands, so it carries both chromes itself —
-/// the light teal would flash on a phone set to the dark scheme.
+/// the light red would flash on a phone set to the dark scheme.
 const PRE_RENDER_STYLE: &str = concat!(
-    "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}",
-    "@media(prefers-color-scheme:dark){html,body,#main{background:#0C2B27}}",
+    "html,body,#main{width:100%;height:100%;margin:0;background:#6B1220}",
+    "@media(prefers-color-scheme:dark){html,body,#main{background:#4A0C16}}",
     // The splash, mirroring `app.css`: the overlay must cover the screen on the
     // very first paint, or the home screen shows through it unstyled for as
     // long as the stylesheet takes to arrive. The animations belong here for
@@ -46,8 +46,8 @@ const PRE_RENDER_STYLE: &str = concat!(
     // while `SPLASH_DURATION` counts from mount, so a stylesheet δ ms late
     // leaves the overlay at δ/240 opacity when Rust drops it. The values are
     // the stylesheet's, so it re-declaring them restarts nothing.
-    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#0F3F3A;animation:splash-out 240ms ease-in 2000ms both}",
-    "@media(prefers-color-scheme:dark){.splash{background:#0C2B27}}",
+    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#6B1220;animation:splash-out 240ms ease-in 2000ms both}",
+    "@media(prefers-color-scheme:dark){.splash{background:#4A0C16}}",
     ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
     ".splash__logo{position:relative;width:min(46%,220px);animation:splash-logo-in 240ms cubic-bezier(0.165,0.84,0.44,1) 300ms both}",
     "@keyframes splash-out{to{opacity:0}}",

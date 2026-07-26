@@ -1,8 +1,8 @@
-//! In-app splash (DESIGN.md §8): the ambient teal loop plays behind the real
+//! In-app splash (DESIGN.md §8): the ambient crimson loop plays behind the real
 //! `templates/logo.png` — the generator never draws the logo, the app overlays
 //! it. The logo comes from the copy `domain::render` already embeds, so the
 //! splash adds the video and nothing else to the APK. The backdrop is the
-//! chrome teal, so dropping the overlay lands on the home screen without a cut.
+//! chrome red, so dropping the overlay lands on the home screen without a cut.
 //!
 //! Nothing here waits on the app: the database opens synchronously before the
 //! first paint (`app::initialize_database`), so the screen behind is already
@@ -37,7 +37,7 @@ const SPLASH_DURATION: Duration = Duration::from_millis(2240);
 /// That chrome also shows for a beat on a normal launch, between mount and the
 /// first decoded frame, so the element starts transparent and is revealed here
 /// once it actually has something to paint. A video that never loads simply
-/// stays hidden and the overlay is the plain chrome teal.
+/// stays hidden and the overlay is the plain chrome red.
 const START_PLAYBACK: &str = r#"
     const video = document.querySelector(".splash__video");
     if (video) {
