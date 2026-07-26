@@ -379,6 +379,59 @@ fn the_bottom_system_inset_is_counted_once_on_its_axis() {
     );
 }
 
+// Kotlin cannot know which screen the WebView is showing, so any navigation
+// bar appearance derived from something other than a constant is wrong on part
+// of the app. Issue #36: derived from `uiMode`, it put dark icons on the red
+// action bar at 1,7:1 on the four screens that carry one. The band is chrome on
+// every screen instead, and the icons are light in both schemes.
+#[test]
+fn the_navigation_band_keeps_one_background_so_its_icons_can_stay_light() {
+    let css = project_file("assets/app.css");
+    let rule = |selector: &str| {
+        css.split(selector)
+            .nth(1)
+            .and_then(|body| body.split('}').next())
+            .unwrap_or_else(|| panic!("missing rule {selector}"))
+            .to_string()
+    };
+    const BAND: &str = "border-bottom: var(--system-inset-bottom) solid var(--color-chrome);";
+
+    // Everything that can cover the band paints it. The action bar has it on
+    // four screens; the scroll container takes over on the other three; and the
+    // sheet is in the top layer, so it reaches the edge over any screen at all —
+    // including its error variant, whose `border` shorthand resets that edge.
+    for selector in [
+        ".screen-scroll:not(:has(.chrome-action-bar)) {",
+        ".bottom-sheet {",
+        ".bottom-sheet-layer.is-error .bottom-sheet {",
+    ] {
+        assert!(
+            rule(selector).contains(BAND),
+            "{selector} must paint the navigation band in chrome"
+        );
+    }
+
+    // Except with the keyboard up: the shell stops at the top of the IME, which
+    // owns the band from there and paints it itself.
+    assert!(
+        rule("html.ime-visible .screen-scroll:not(:has(.chrome-action-bar)) {")
+            .contains("border-bottom-width: 0;"),
+        "the band must not be reserved above the keyboard"
+    );
+
+    let activity = project_file("android/MainActivity.kt");
+    let assignments: Vec<&str> = activity
+        .lines()
+        .filter(|line| line.contains("isAppearanceLightNavigationBars"))
+        .map(str::trim)
+        .collect();
+    assert_eq!(
+        assignments,
+        ["isAppearanceLightNavigationBars = false"],
+        "the navigation bar icons must be light unconditionally"
+    );
+}
+
 #[test]
 fn the_record_action_bar_keeps_its_two_delivery_paths_at_parity() {
     let css = project_file("assets/app.css");

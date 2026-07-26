@@ -293,9 +293,25 @@ summary:focus-visible {
 
 /* Screens without a chrome bar have nothing to paint over the navigation
    band, so they reserve it themselves. The inset is counted exactly once on
-   this axis, here or on the bar — never on both. */
+   this axis, here or on the bar — never on both.
+
+   Reserved as a border rather than as padding, so the band is painted in
+   chrome like the one the action bar paints on the other four screens. The
+   system icons then stand on the same red everywhere and can stay white in
+   both schemes; dark icons on #6B1220 measure 1,7:1 (issue #36). A border
+   sits outside the padding box and does not scroll with the content, so the
+   band stays at the screen edge. */
 .screen-scroll:not(:has(.chrome-action-bar)) {
-    padding-bottom: calc(var(--space-lg) + var(--system-inset-bottom));
+    border-bottom: var(--system-inset-bottom) solid var(--color-chrome);
+    padding-bottom: var(--space-lg);
+}
+
+/* `--ime-inset-bottom` is measured from the bottom of the window and already
+   contains the navigation band, so the shell stops at the top of the keyboard
+   and the band belongs to the IME, which paints it and sets its own icons.
+   Reserving it here would float a red stripe above the keyboard. */
+html.ime-visible .screen-scroll:not(:has(.chrome-action-bar)) {
+    border-bottom-width: 0;
 }
 
 .screen {
@@ -1008,7 +1024,12 @@ input[aria-busy="true"]:disabled {
     max-height: min(80%, 38rem);
     gap: var(--space-md);
     overflow: auto;
-    padding: var(--space-sm) var(--space-gutter) calc(var(--space-lg) + var(--system-inset-bottom));
+    padding: var(--space-sm) var(--space-gutter) var(--space-lg);
+    /* The sheet is in the top layer and reaches the screen edge, so it is what
+       covers the navigation band while it is open — on any screen, over an
+       action bar or not. Same band as everywhere else, or white icons would
+       land on the elevated surface: 1:1 in the light scheme. */
+    border-bottom: var(--system-inset-bottom) solid var(--color-chrome);
     border-radius: var(--radius-sheet);
     background: var(--color-elevated);
     box-shadow: 0 -4px 16px var(--color-shadow);
@@ -1017,7 +1038,8 @@ input[aria-busy="true"]:disabled {
 
 .bottom-sheet-layer.is-error .bottom-sheet {
     border: 2px solid var(--color-danger);
-    border-bottom: 0;
+    /* The shorthand above resets all four edges: give the band back. */
+    border-bottom: var(--system-inset-bottom) solid var(--color-chrome);
 }
 
 /* Names the third delivery: it is reached through the Android chooser, so the
