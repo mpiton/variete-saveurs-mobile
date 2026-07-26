@@ -295,6 +295,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tools/check-apk.sh`, run before any install: one native binary, for the
+  targeted ABI, referencing the stylesheet the APK actually bundles and matching
+  `assets/app.css` on disk. A `dx` build can succeed while shipping something
+  else than the working tree, silently — `asset!()` bakes a content hash into
+  the binary, dx caches it, and editing only the stylesheet invalidates neither
+  that cache nor the crate; since the Gradle assets directory is never purged,
+  the stale file is still there to be served. Successive builds also leave their
+  `libmain.so` behind, so an APK can carry two ABIs from two different builds.
+  A whole day of UI work was tested against an eight-hour-old stylesheet before
+  this was noticed. `rm -rf target/dx` prevents both; the script proves it, and
+  the release process now requires both.
+
 - Animated splash (DESIGN §8, task 31): the bundled `splash-loop.mp4`
   plays muted and looping under the real logo, which fades and scales in
   over 240 ms on an ease-out-quart curve after a 300 ms hold, then the
