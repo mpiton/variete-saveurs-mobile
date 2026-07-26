@@ -1477,6 +1477,19 @@ input[aria-busy="true"]:disabled {
     font-weight: 500;
 }
 
+/* Only present past SEARCH_THRESHOLD documents: the field and its clear button
+   share a row so the clear stays a gesture rather than a held backspace. */
+.home-search {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--touch-gap);
+}
+
+.home-search .outlined-field {
+    flex: 1;
+    min-width: 0;
+}
+
 /* First-launch email setup prompt (task 25): a non-blocking card — the app
    works without configuration, only sending stays gated on the fiche. */
 .setup-prompt {

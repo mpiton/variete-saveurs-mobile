@@ -25,6 +25,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   accumulate behind a « Terminé » button, with a live count as the receipt for
   taps that land behind the scrim.
 
+- The home screen can be searched by client name, past 15 documents. That is the
+  handle she actually has — « le devis de la mairie » — so it is the only thing
+  the search matches, through the same accent- and case-folding the form's
+  autocomplete uses: « eglise » finds « Église » on both screens. It combines
+  with the kind filter, and it does not survive navigation, unlike the filter:
+  one looks something up, consults it, and comes back to the whole list.
+
+  The field only appears past the threshold, on the size of the history rather
+  than on what is displayed. Below it the list is short enough to read, and a
+  permanent field would be a fifth thing competing for a home screen already
+  found crowded; at a few documents a month it lands near the end of the first
+  year. No month separators and no pagination: she does not look by period, and
+  the volume never gets there.
+
+  The empty state now tells three nothings apart — no documents, nothing in this
+  filter, no client of that name — each with the action that undoes the cause.
+  « Aucun document » on a history full of quotes, because the filter said
+  Factures, sent her looking for a bug that was not one.
+
 - The share sheet names printing. PRODUCT.md keeps the three deliveries at
   parity and the app never wrote the word — it is reached through the Android
   chooser, so the sheet is the only place it can be said. « Partager le

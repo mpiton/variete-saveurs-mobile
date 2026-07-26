@@ -4,7 +4,7 @@ use chrono::Utc;
 use dioxus::prelude::*;
 
 use crate::domain::{
-    db::{list_documents, load_draft, save_draft},
+    db::{count_documents, list_documents, load_draft, save_draft},
     models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind},
     money::format_eur,
     render::format_date,
@@ -15,7 +15,7 @@ use super::{
     app::{DatabaseContext, OutsideInteraction, Route},
     components::{
         BottomSheet, Button, ButtonVariant, DocumentCard, EmptyState, ErrorBlock, FabMenu,
-        SegmentedButton,
+        OutlinedField, SegmentedButton,
     },
 };
 
@@ -23,6 +23,12 @@ use super::{
 /// comes back — and used to land on « Tous » again, every time. Session-scoped
 /// on purpose: a cold start opens on everything.
 static LAST_FILTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Below this many documents the list is short enough to read, and a permanent
+/// search field would be a fifth thing competing for the home screen. Above it,
+/// « le devis de la mairie » starts to be a scroll. At a few documents a month,
+/// it lands near the end of the first year.
+const SEARCH_THRESHOLD: usize = 15;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum HomeFilter {
@@ -55,6 +61,9 @@ impl HomeFilter {
 #[derive(Default, PartialEq, Eq)]
 struct HomeData {
     documents: Vec<Document>,
+    /// Every document, ignoring the filter and the search: the search field
+    /// appears on the size of the history, not on what is currently shown.
+    total_documents: usize,
     draft: Option<DocumentInput>,
     /// First-launch prompt (task 25): shown while email sending is
     /// unconfigured and the gérante hasn't dismissed it. Non-blocking — the
@@ -80,6 +89,9 @@ pub(super) fn Home() -> Element {
         let _ = outside_interaction();
         fab_open.set(false);
     });
+    // Deliberately not persisted, unlike the filter: one looks something up,
+    // consults it, and comes back to the whole list.
+    let mut search = use_signal(String::new);
     let mut pending_kind = use_signal(|| None::<DocumentKind>);
     let mut action_error = use_signal(|| None::<String>);
     let reload = use_signal(|| 0_u64);
@@ -90,23 +102,28 @@ pub(super) fn Home() -> Element {
             // Subscribing to `reload` refreshes after « Plus tard ».
             reload();
             if database.is_ok() {
-                Some(load_home_data(&database, filter()))
+                let term = search();
+                Some(load_home_data(&database, filter(), Some(term.as_str())))
             } else {
                 None
             }
         })
     };
     let home_data = home_data.read();
-    let (documents, draft, show_email_setup, load_error) = match home_data.as_ref() {
+    let (documents, total_documents, draft, show_email_setup, load_error) = match home_data.as_ref()
+    {
         Some(Ok(data)) => (
             data.documents.as_slice(),
+            data.total_documents,
             data.draft.as_ref(),
             data.show_email_setup,
             None,
         ),
-        Some(Err(error)) => (&[][..], None, false, Some(error.as_str())),
-        None => (&[][..], None, false, None),
+        Some(Err(error)) => (&[][..], 0, None, false, Some(error.as_str())),
+        None => (&[][..], 0, None, false, None),
     };
+    let searching = !search().trim().is_empty();
+    let offers_search = total_documents > SEARCH_THRESHOLD;
     let has_draft = draft.is_some();
     let draft_kind = draft.map(|draft| document_kind_label(&draft.kind));
     let documents_empty = documents.is_empty();
@@ -129,6 +146,25 @@ pub(super) fn Home() -> Element {
                                 filter.set(selected);
                             }
                         },
+                    }
+
+                    if offers_search {
+                        div { class: "home-search",
+                            OutlinedField {
+                                label: "Rechercher une cliente".to_string(),
+                                name: "home-search".to_string(),
+                                value: search(),
+                                autocomplete: "off".to_string(),
+                                oninput: move |event: FormEvent| search.set(event.value()),
+                            }
+                            if searching {
+                                Button {
+                                    label: "Effacer".to_string(),
+                                    variant: ButtonVariant::Text,
+                                    onclick: move |_| search.set(String::new()),
+                                }
+                            }
+                        }
                     }
 
                     if show_email_setup {
@@ -177,10 +213,33 @@ pub(super) fn Home() -> Element {
                     }
 
                     if documents_empty {
-                        EmptyState {
-                            message: "Aucun document",
-                            action_label: "Créer",
-                            onclick: move |_| fab_open.set(true),
+                        // Three different nothings. « Aucun document » on a
+                        // history full of quotes, because the filter says
+                        // Factures, sent her looking for a bug that was not one.
+                        if searching {
+                            EmptyState {
+                                message: "Aucune cliente de ce nom",
+                                action_label: "Effacer la recherche",
+                                onclick: move |_| search.set(String::new()),
+                            }
+                        } else if filter() != HomeFilter::All {
+                            EmptyState {
+                                message: "Rien dans ce filtre",
+                                action_label: "Voir tous les documents",
+                                onclick: move |_| {
+                                    LAST_FILTER.store(0, AtomicOrdering::Relaxed);
+                                    filter.set(HomeFilter::All);
+                                },
+                            }
+                        } else {
+                            EmptyState {
+                                message: "Aucun document",
+                                action_label: "Créer",
+                                onclick: move |event: MouseEvent| {
+                                    event.stop_propagation();
+                                    fab_open.set(true);
+                                },
+                            }
                         }
                     } else {
                         div { class: "home-document-list",
@@ -295,14 +354,22 @@ pub(super) fn Home() -> Element {
     }
 }
 
-fn load_home_data(database: &DatabaseContext, filter: HomeFilter) -> Result<HomeData, String> {
+fn load_home_data(
+    database: &DatabaseContext,
+    filter: HomeFilter,
+    search: Option<&str>,
+) -> Result<HomeData, String> {
     let database = database.as_ref().map_err(Clone::clone)?;
     let connection = database
         .lock()
         .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
     let kind = filter.kind();
-    let documents = list_documents(&connection, kind.as_ref()).map_err(|error| {
+    let documents = list_documents(&connection, kind.as_ref(), search).map_err(|error| {
         eprintln!("Home document query failed: {error}");
+        "Impossible de charger les documents.".to_string()
+    })?;
+    let total_documents = count_documents(&connection).map_err(|error| {
+        eprintln!("Home document count failed: {error}");
         "Impossible de charger les documents.".to_string()
     })?;
     let draft = load_draft(&connection).map_err(|error| {
@@ -327,6 +394,7 @@ fn load_home_data(database: &DatabaseContext, filter: HomeFilter) -> Result<Home
     };
     Ok(HomeData {
         documents,
+        total_documents,
         draft,
         show_email_setup,
     })
@@ -434,14 +502,14 @@ mod tests {
     fn email_setup_prompt_shows_until_dismissed_or_configured() {
         let (_file, database) = temp_context();
 
-        let data = load_home_data(&database, HomeFilter::All).expect("load home data");
+        let data = load_home_data(&database, HomeFilter::All, None).expect("load home data");
         assert!(data.show_email_setup);
 
         {
             let connection = database.as_ref().expect("database").lock().expect("lock");
             dismiss_email_setup(&connection).expect("dismiss");
         }
-        let data = load_home_data(&database, HomeFilter::All).expect("load home data");
+        let data = load_home_data(&database, HomeFilter::All, None).expect("load home data");
         assert!(!data.show_email_setup);
     }
 
@@ -454,7 +522,7 @@ mod tests {
             save_email_settings(&connection, Some("key"), "contact@variete-saveurs.fr", "")
                 .expect("save settings");
         }
-        let data = load_home_data(&database, HomeFilter::All).expect("load home data");
+        let data = load_home_data(&database, HomeFilter::All, None).expect("load home data");
         assert!(!data.show_email_setup);
     }
 

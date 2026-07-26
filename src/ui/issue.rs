@@ -483,7 +483,7 @@ mod tests {
             "the draft must survive a refused emission"
         );
         assert!(
-            list_documents(&connection, None)
+            list_documents(&connection, None, None)
                 .expect("list documents")
                 .is_empty(),
             "no document may be created"

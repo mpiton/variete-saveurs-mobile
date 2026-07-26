@@ -382,9 +382,20 @@ pub fn issue_document(
     })
 }
 
+/// Issued documents, newest first, narrowed by kind and by client name.
+///
+/// She looks for « le devis de la mairie » — the client name is the handle she
+/// has, so it is the only thing `search` matches. The comparison runs through
+/// `normalize_client_search`, the same accent- and case-folding the form's
+/// autocomplete uses, so « eglise » finds « Église » on both screens.
+///
+/// Filtering in Rust rather than in SQL: SQLite's `LIKE` is ASCII-only for case
+/// folding and knows nothing about accents, and at this volume (a few documents
+/// a month) the whole history is a handful of rows.
 pub fn list_documents(
     connection: &Connection,
     filter: Option<&DocumentKind>,
+    search: Option<&str>,
 ) -> rusqlite::Result<Vec<Document>> {
     let query = format!(
         "{DOCUMENT_SELECT}
@@ -392,9 +403,36 @@ pub fn list_documents(
          ORDER BY d.created_at DESC, d.id DESC"
     );
     let mut statement = connection.prepare(&query)?;
-    statement
+    let documents = statement
         .query_map(params![filter.map(DocumentKind::as_str)], document_from_row)?
-        .collect()
+        .collect::<rusqlite::Result<Vec<Document>>>()?;
+
+    // Trimmed before normalising: the Android keyboard appends a space after an
+    // autocompletion, so « boulangerie » with a trailing space matched nothing
+    // at all. Whitespace alone is not a search either.
+    let Some(needle) = search
+        .map(str::trim)
+        .filter(|term| !term.is_empty())
+        .map(normalize_client_search)
+    else {
+        return Ok(documents);
+    };
+    Ok(documents
+        .into_iter()
+        .filter(|document| normalize_client_search(&document.input.client.name).contains(&needle))
+        .collect())
+}
+
+/// How many documents exist, all kinds and no search. Drives whether the home
+/// screen offers a search at all: below the threshold the list is short enough
+/// to read, and a permanent field would be one more thing on the screen the
+/// critique already found crowded.
+pub fn count_documents(connection: &Connection) -> rusqlite::Result<usize> {
+    connection
+        .query_row("SELECT COUNT(*) FROM documents", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map(|count| count.max(0) as usize)
 }
 
 pub fn get_document(connection: &Connection, id: i64) -> rusqlite::Result<Document> {
@@ -565,10 +603,10 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        IssueError, LineDraft, clear_draft, get_document, insert_document, issue_document,
-        list_active_catalog_items, list_catalog, list_documents, load_draft, load_line_editor,
-        mark_sent, migrate, open_database, save_draft, save_line_editor, search_clients,
-        seed_catalog, upsert_catalog_item,
+        IssueError, LineDraft, clear_draft, count_documents, get_document, insert_document,
+        issue_document, list_active_catalog_items, list_catalog, list_documents, load_draft,
+        load_line_editor, mark_sent, migrate, open_database, save_draft, save_line_editor,
+        search_clients, seed_catalog, upsert_catalog_item,
     };
     use crate::domain::convert::invoice_draft_from_quote;
     use crate::domain::models::{
@@ -673,6 +711,91 @@ mod tests {
         let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
         save_draft(&connection, &input, "2026-07-22T10:00:00Z").expect("save draft");
         assert_eq!(load_draft(&connection).expect("load draft"), Some(input));
+    }
+
+    #[test]
+    fn the_search_matches_the_client_name_through_accents_and_case() {
+        let (_file, mut connection) = initialized_connection();
+        persist_document(
+            &mut connection,
+            10,
+            &document_input(DocumentKind::Quote, "Église Saint-Rémy"),
+            None,
+            "2026-07-22T10:00:00Z",
+        );
+        persist_document(
+            &mut connection,
+            11,
+            &document_input(DocumentKind::Quote, "Boulangerie Martin"),
+            None,
+            "2026-07-22T11:00:00Z",
+        );
+
+        // She types what she remembers, not what she typed six months ago.
+        for needle in ["eglise", "ÉGLISE", "  saint-rémy  "] {
+            let found = list_documents(&connection, None, Some(needle)).expect("search");
+            assert_eq!(found.len(), 1, "« {needle} » should find exactly one");
+            assert_eq!(found[0].input.client.name, "Église Saint-Rémy");
+        }
+
+        // A blank search is not a search.
+        assert_eq!(
+            list_documents(&connection, None, Some("   "))
+                .expect("blank search")
+                .len(),
+            2
+        );
+        assert_eq!(
+            list_documents(&connection, None, None)
+                .expect("no search")
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn the_search_and_the_filter_narrow_together() {
+        let (_file, mut connection) = initialized_connection();
+        let quote = document_input(DocumentKind::Quote, "Boulangerie Martin");
+        let quote_id = persist_document(&mut connection, 10, &quote, None, "2026-07-22T10:00:00Z");
+        let mut invoice = invoice_draft_from_quote(
+            &get_document(&connection, quote_id).expect("load quote"),
+            "2026-07-23",
+        );
+        invoice.client.name = "Boulangerie Martin".to_string();
+        persist_document(
+            &mut connection,
+            1,
+            &invoice,
+            Some(quote_id),
+            "2026-07-23T10:00:00Z",
+        );
+
+        let invoices = list_documents(
+            &connection,
+            Some(&DocumentKind::Invoice),
+            Some("boulangerie"),
+        )
+        .expect("search invoices");
+
+        assert_eq!(invoices.len(), 1);
+        assert_eq!(invoices[0].input.kind, DocumentKind::Invoice);
+    }
+
+    #[test]
+    fn counting_documents_ignores_filter_and_search() {
+        let (_file, mut connection) = initialized_connection();
+        assert_eq!(count_documents(&connection).expect("count empty"), 0);
+        persist_document(
+            &mut connection,
+            10,
+            &document_input(DocumentKind::Quote, "Mairie de Lyon"),
+            None,
+            "2026-07-22T10:00:00Z",
+        );
+        // Drives whether the home screen offers a search at all, so it must
+        // count the history, never what is currently displayed.
+        assert_eq!(count_documents(&connection).expect("count"), 1);
     }
 
     #[test]
@@ -1121,7 +1244,7 @@ mod tests {
             "2026-07-22T12:00:00Z",
         );
 
-        let all = list_documents(&connection, None).expect("list all documents");
+        let all = list_documents(&connection, None, None).expect("list all documents");
         assert_eq!(
             all.iter().map(|document| document.id).collect::<Vec<_>>(),
             [latest_quote_id, converted_id, invoice_id, quote_id]
@@ -1139,8 +1262,8 @@ mod tests {
                 .is_invoiced
         );
 
-        let quotes =
-            list_documents(&connection, Some(&DocumentKind::Quote)).expect("list quote documents");
+        let quotes = list_documents(&connection, Some(&DocumentKind::Quote), None)
+            .expect("list quote documents");
         assert_eq!(
             quotes
                 .iter()
@@ -1148,7 +1271,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [latest_quote_id, quote_id]
         );
-        let invoices = list_documents(&connection, Some(&DocumentKind::Invoice))
+        let invoices = list_documents(&connection, Some(&DocumentKind::Invoice), None)
             .expect("list invoice documents");
         assert_eq!(
             invoices
