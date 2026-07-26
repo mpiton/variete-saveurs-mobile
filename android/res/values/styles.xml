@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces the theme `dx` scaffolds. Its `Theme.AppCompat.Light` parent
+     pins `android:isLightTheme` to true, and the WebView answers the
+     `prefers-color-scheme` media query from that attribute — with the
+     scaffolded theme the dark stylesheet never matches, however the phone is
+     set. `DayNight` flips the attribute with the system. -->
+<resources>
+    <style name="AppTheme" parent="@style/Theme.AppCompat.DayNight.NoActionBar">
+        <!-- The starting window is drawn from the theme before the process
+             exists, so `window.setBackgroundDrawable` cannot reach it: this
+             is the only way to keep the launch flash on the chrome instead
+             of the AppCompat default (#FAFAFA). -->
+        <item name="android:windowBackground">@color/vs_chrome</item>
+    </style>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Kept out of the scaffolded `colors.xml` so that file survives the copy
+     `build.rs` does. Mirrors the CSS chrome token in `assets/app.css`. -->
+<resources>
+    <color name="vs_chrome">#0F3F3A</color>
+</resources>

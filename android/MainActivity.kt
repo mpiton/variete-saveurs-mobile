@@ -27,16 +27,13 @@ class MainActivity : WryActivity() {
     private var latestInsets: WindowInsetsCompat? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        window.setBackgroundDrawable(ColorDrawable(CHROME_COLOR))
+        window.setBackgroundDrawable(ColorDrawable(chromeColor()))
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         super.onCreate(savedInstanceState)
 
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = true
-        }
+        applySystemBarAppearance()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
@@ -57,7 +54,7 @@ class MainActivity : WryActivity() {
     override fun onWebViewCreate(webView: WebView) {
         super.onWebViewCreate(webView)
         this.webView = webView
-        webView.setBackgroundColor(CHROME_COLOR)
+        webView.setBackgroundColor(chromeColor())
         webView.settings.textZoom = (resources.configuration.fontScale * 100).roundToInt()
         // evaluateJavascript is a silent no-op until a page is loaded, and the
         // first insets dispatch usually lands before that: replay the cached
@@ -102,8 +99,32 @@ class MainActivity : WryActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // uiMode is in configChanges, so a theme switch keeps this activity
+        // alive instead of recreating it. The native chrome around the WebView
+        // does not follow the new configuration by itself, so repaint it here.
+        val chrome = chromeColor(newConfig)
+        window.setBackgroundDrawable(ColorDrawable(chrome))
+        applySystemBarAppearance(newConfig)
         if (::webView.isInitialized) {
+            webView.setBackgroundColor(chrome)
             webView.settings.textZoom = (newConfig.fontScale * 100).roundToInt()
+        }
+    }
+
+    private fun isNightMode(config: Configuration = resources.configuration): Boolean =
+        config.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+    private fun chromeColor(config: Configuration = resources.configuration): Int =
+        if (isNightMode(config)) CHROME_COLOR_DARK else CHROME_COLOR_LIGHT
+
+    private fun applySystemBarAppearance(config: Configuration = resources.configuration) {
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            // The status bar always sits on the teal chrome.
+            isAppearanceLightStatusBars = false
+            // The navigation bar sits on the content background on most
+            // screens; the form and the preview end on the teal action bar,
+            // where dark icons are wrong — but only in the light scheme.
+            isAppearanceLightNavigationBars = !isNightMode(config)
         }
     }
 
@@ -116,7 +137,8 @@ class MainActivity : WryActivity() {
     }
 
     private companion object {
-        val CHROME_COLOR: Int = Color.rgb(15, 63, 58)
+        val CHROME_COLOR_LIGHT: Int = Color.rgb(15, 63, 58)
+        val CHROME_COLOR_DARK: Int = Color.rgb(12, 43, 39)
         val REPLAY_DELAYS_MS = longArrayOf(0L, 300L, 1000L, 3000L)
     }
 }

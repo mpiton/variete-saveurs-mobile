@@ -16,6 +16,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dark scheme (DESIGN §2, task 30): the app follows the system setting
+  through `prefers-color-scheme`. The eight `dark-*` tokens of the DESIGN
+  frontmatter are applied as specified; `surface-dim`, `label`,
+  `border-soft`, `primary-tint` and `danger` have no dark counterpart
+  there and are derived — `surface-dim` rises *above* `surface` (M3 tonal
+  elevation reverses in the dark), `primary-tint` becomes a dark teal
+  container, and `danger` is lightened because #B91C1C only reaches
+  2.6:1 on the dark surface. The fourteen token pairs the components
+  paint are checked at WCAG AA in `tests/ui_foundation.rs` (worst pair
+  5.56:1), and a companion test pins the only three colours left outside
+  the tokens — the white A4, the DESIGN §4 scrim, and the press state on
+  the chrome — so no light value can be hardcoded back in. Bottom sheets
+  and the overflow menu now rise to their own `elevated` tone: a shadow
+  cannot separate two dark greys, and they previously used the same
+  token as the cards behind them (1.07:1). Pressed states move to an M3
+  state layer, since `brightness(0.88)` shifts a near-black surface by
+  about 2 L*. The Android theme is `Theme.AppCompat.DayNight` with a
+  `values-night` chrome: the WebView answers `prefers-color-scheme` from
+  the theme's `isLightTheme`, so under the scaffolded `.Light` parent the
+  dark stylesheet would never have matched on a device. The pre-render
+  style, the theme's `windowBackground` and the activity window all carry
+  both chromes so the light teal no longer flashes at startup on a dark
+  phone, and `uiMode` is declared in `configChanges` so switching themes
+  repaints the app without recreating the activity. The A4 preview stays
+  white in both schemes — it is paper.
+
 - Android Auto Backup (ARCHI §6, task 29): `allowBackup` is now declared
   explicitly, with rules for both Android generations —
   `res/xml/backup_rules.xml` (API 24-30) and
