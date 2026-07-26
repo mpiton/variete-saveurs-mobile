@@ -6,20 +6,31 @@
 //! without that the first sign of a typo is a refused send in front of a
 //! client. Without configuration the app keeps working — only email sending
 //! stays gated off (task 25).
+//!
+//! The screen also carries the update path (issue 35): the app ships as a
+//! direct APK, so nothing else would ever tell her a fix exists.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use dioxus::prelude::*;
 use tokio::time::sleep;
 
-use crate::domain::{
-    settings::{EmailSettings, load_email_settings, save_email_settings},
-    validation::{plausible_email, validate_email_settings},
+use crate::{
+    domain::{
+        settings::{EmailSettings, load_email_settings, save_email_settings},
+        update::{AvailableUpdate, current_version},
+        validation::{plausible_email, validate_email_settings},
+    },
+    platform::update::{
+        can_install, check_for_update, download_apk, install_apk, open_install_permission_settings,
+    },
 };
 
 use super::{
     app::DatabaseContext,
     components::{Button, ButtonVariant, ErrorBlock, OutlinedField, Snackbar},
+    issue::write_from_worker,
 };
 
 const NOTICE_DURATION: Duration = Duration::from_secs(4);
@@ -94,12 +105,16 @@ pub(super) fn Settings() -> Element {
     });
 
     if let Some(error) = load_error {
+        // The update section stays: it needs no database, and a build that
+        // fixes whatever broke the settings query is exactly what she would
+        // want to reach from here.
         return rsx! {
             section { class: "screen settings-screen", aria_label: "Réglages",
                 ErrorBlock {
                     title: "Chargement impossible".to_string(),
                     message: error,
                 }
+                UpdateSection {}
             }
         };
     }
@@ -203,11 +218,192 @@ pub(super) fn Settings() -> Element {
                 label: "Enregistrer".to_string(),
                 onclick: move |_| save_settings(&database, form, key_saved, notice),
             }
+            // After « Enregistrer »: that button belongs to the email form
+            // above it, and the update path is a separate errand.
+            UpdateSection {}
             if let Some(message) = notice() {
                 Snackbar { message }
             }
         }
     }
+}
+
+/// Where the update flow stands. Every transition is a worker answering, so
+/// the phase lives in a `SyncStorage` signal like the send and share flows.
+#[derive(Clone, PartialEq)]
+enum UpdatePhase {
+    Idle,
+    Checking,
+    UpToDate,
+    /// A newer release is published; the next tap downloads and installs it.
+    Available(AvailableUpdate),
+    /// Android refuses installs from this app until she grants it, once.
+    PermissionNeeded(AvailableUpdate),
+    Installing(AvailableUpdate),
+    /// The system installer has the APK and owns the screen from here.
+    Handed,
+    Failed(String),
+}
+
+/// The update path (issue 35). Self-contained — its own signal, no database —
+/// so the screen can offer it even when the settings query failed.
+#[component]
+fn UpdateSection() -> Element {
+    let phase = use_signal_sync(|| UpdatePhase::Idle);
+    let state = phase.read().clone();
+
+    // Available and Installing show the same button; keeping the update in
+    // both phases lets it stay labelled with the version while it downloads.
+    let pending = match &state {
+        UpdatePhase::Available(update) | UpdatePhase::Installing(update) => Some(update.clone()),
+        _ => None,
+    };
+    let status = match &state {
+        UpdatePhase::Idle | UpdatePhase::Failed(_) => None,
+        UpdatePhase::Checking => Some("Vérification en cours…".to_string()),
+        UpdatePhase::UpToDate => Some("Vous avez la dernière version.".to_string()),
+        UpdatePhase::Available(update) => {
+            Some(format!("Version {} disponible.", update.version))
+        }
+        UpdatePhase::PermissionNeeded(_) => Some(
+            "Android demande votre autorisation avant d’installer une application hors Play Store. Accordez-la, revenez ici, puis relancez l’installation."
+                .to_string(),
+        ),
+        UpdatePhase::Installing(_) => Some("Téléchargement en cours, restez sur cet écran…".to_string()),
+        UpdatePhase::Handed => Some(
+            "L’installation prend la suite. Suivez ce qu’affiche Android, puis rouvrez l’application."
+                .to_string(),
+        ),
+    };
+
+    // One action per phase, built here rather than in the markup: three
+    // mutually exclusive buttons nest badly inside RSX.
+    let action = if let UpdatePhase::PermissionNeeded(update) = state.clone() {
+        rsx! {
+            Button {
+                label: "Ouvrir l’autorisation Android".to_string(),
+                variant: ButtonVariant::Tonal,
+                onclick: move |_| grant_install_permission(phase, update.clone()),
+            }
+        }
+    } else if let Some(update) = pending {
+        let version = update.version.clone();
+        rsx! {
+            Button {
+                label: "Télécharger et installer la version {version}",
+                loading: matches!(state, UpdatePhase::Installing(_)),
+                onclick: move |_| start_install(phase, update.clone()),
+            }
+        }
+    } else {
+        // `Handed` lands here too, on purpose: if she dismissed the installer,
+        // this is the way back to the offer. Nothing else on the screen would
+        // give her one short of leaving Réglages and coming back.
+        rsx! {
+            Button {
+                label: "Vérifier les mises à jour".to_string(),
+                variant: ButtonVariant::Tonal,
+                loading: matches!(state, UpdatePhase::Checking),
+                onclick: move |_| start_check(phase),
+            }
+        }
+    };
+
+    rsx! {
+        section { class: "form-section settings-update", aria_label: "Mise à jour de l’application",
+            p { class: "settings-update__version", "Version installée : {current_version()}" }
+            // The line that has to survive every redesign of this screen: a
+            // mise à jour keeps her accounting, uninstalling destroys it.
+            p { class: "settings-update__safety",
+                "Une mise à jour conserve vos devis, vos factures et vos exports. Ne désinstallez jamais l’application : c’est la seule chose qui les effacerait."
+            }
+            if let Some(message) = status {
+                p { class: "settings-update__status", role: "status", "{message}" }
+            }
+            if let UpdatePhase::Failed(message) = state {
+                ErrorBlock {
+                    title: "Mise à jour impossible".to_string(),
+                    message,
+                }
+            }
+            {action}
+        }
+    }
+}
+
+/// Runs a network or JNI job off the UI thread and publishes the phase it
+/// returns — the send worker's shape (`compose.rs`), fallible spawn included:
+/// a resource-starved OS must not panic the screen.
+fn run_update_job(
+    phase: Signal<UpdatePhase, SyncStorage>,
+    label: &'static str,
+    job: impl FnOnce() -> UpdatePhase + Send + 'static,
+) {
+    let worker = std::thread::Builder::new().spawn(move || {
+        let next = match catch_unwind(AssertUnwindSafe(job)) {
+            Ok(next) => next,
+            Err(payload) => {
+                eprintln!("{label} panicked: {payload:?}");
+                UpdatePhase::Failed(
+                    "Échec inattendu de la mise à jour (détail dans les logs).".to_string(),
+                )
+            }
+        };
+        write_from_worker(phase, |current| *current = next);
+    });
+    if let Err(error) = worker {
+        eprintln!("{label} worker could not start: {error}");
+        write_from_worker(phase, |current| {
+            *current = UpdatePhase::Failed("Impossible de démarrer la mise à jour.".to_string());
+        });
+    }
+}
+
+/// A live job is left alone: the button is inert while loading, and a second
+/// worker would race the first one's phase.
+fn busy(phase: &UpdatePhase) -> bool {
+    matches!(phase, UpdatePhase::Checking | UpdatePhase::Installing(_))
+}
+
+fn start_check(mut phase: Signal<UpdatePhase, SyncStorage>) {
+    if busy(&phase.read()) {
+        return;
+    }
+    *phase.write() = UpdatePhase::Checking;
+    run_update_job(phase, "Update check", || match check_for_update() {
+        Ok(Some(update)) => UpdatePhase::Available(update),
+        Ok(None) => UpdatePhase::UpToDate,
+        Err(error) => UpdatePhase::Failed(error.to_string()),
+    });
+}
+
+fn start_install(mut phase: Signal<UpdatePhase, SyncStorage>, update: AvailableUpdate) {
+    if busy(&phase.read()) {
+        return;
+    }
+    *phase.write() = UpdatePhase::Installing(update.clone());
+    run_update_job(phase, "Update install", move || {
+        // Asked before the download, not after: discovering Android's refusal
+        // once tens of megabytes are spent is the parcours issue 35 rules out.
+        if !can_install() {
+            return UpdatePhase::PermissionNeeded(update);
+        }
+        match download_apk(&update).and_then(|path| install_apk(&path)) {
+            Ok(()) => UpdatePhase::Handed,
+            Err(error) => UpdatePhase::Failed(error.to_string()),
+        }
+    });
+}
+
+/// Android reports nothing back when she leaves that screen, so the flow just
+/// re-offers the install: the next tap re-reads the permission.
+fn grant_install_permission(phase: Signal<UpdatePhase, SyncStorage>, update: AvailableUpdate) {
+    run_update_job(phase, "Install permission screen", move || {
+        match open_install_permission_settings() {
+            Ok(()) => UpdatePhase::Available(update),
+            Err(error) => UpdatePhase::Failed(error.to_string()),
+        }
+    });
 }
 
 /// Field-level checks mirror the domain gate so mistakes land next to the
@@ -300,7 +496,9 @@ fn persist_settings(
 
 #[cfg(test)]
 mod tests {
-    use super::{SettingsForm, key_input_type};
+    use crate::domain::update::AvailableUpdate;
+
+    use super::{SettingsForm, UpdatePhase, busy, key_input_type};
 
     #[test]
     fn the_key_field_hides_its_content_until_asked() {
@@ -322,5 +520,30 @@ mod tests {
         assert!(form.new_api_key.is_empty());
         assert!(!form.editing_key);
         assert!(!form.reveal_key);
+    }
+
+    /// The double-tap guard: only a running job blocks a new one. A phase left
+    /// out of `busy` would let a second worker spawn behind the first and race
+    /// it to the terminal state — two stacked downloads, or two installers.
+    #[test]
+    fn only_a_running_job_blocks_the_next_one() {
+        let update = AvailableUpdate {
+            version: "0.2.0".to_string(),
+            apk_url: "https://github.com/x/y/releases/download/v0.2.0/app.apk".to_string(),
+        };
+
+        assert!(busy(&UpdatePhase::Checking));
+        assert!(busy(&UpdatePhase::Installing(update.clone())));
+
+        for idle in [
+            UpdatePhase::Idle,
+            UpdatePhase::UpToDate,
+            UpdatePhase::Available(update.clone()),
+            UpdatePhase::PermissionNeeded(update),
+            UpdatePhase::Handed,
+            UpdatePhase::Failed("réseau".to_string()),
+        ] {
+            assert!(!busy(&idle));
+        }
     }
 }

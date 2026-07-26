@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Réglages can now update the app itself (ADR 0004). The APK ships direct, never
+  through the Play Store, so a fix only ever reached the phone if someone came by
+  with a cable — and nothing on the phone said a fix existed. « Vérifier les mises
+  à jour » reads the latest published GitHub release (public repo, so no token to
+  protect), compares its `vX.Y.Z` tag against the running version numerically, and
+  offers the attached APK; anything not served from `github.com` is refused. The
+  install permission is checked before the download, not after tens of megabytes
+  are spent, and when Android has not granted it the screen opens « Installer des
+  applications inconnues » itself. The APK streams into the app cache under a
+  `.part` name and is renamed only once flushed, so a dropped connection leaves
+  nothing the installer would open and reject. Handing it over is an Intent — the
+  system installer owns the confirmation, the progress and any failure. Nothing
+  runs at startup: the check is that button and nothing else, keeping the network
+  off the saisie path. The section states, in every phase, that a mise à jour
+  keeps her devis, factures and exports and that uninstalling is the one thing
+  that would erase them.
+
 - « Afficher la clé » under the Brevo key field in Réglages. The key is a long
   opaque string typed into a `password` input, so a typo left no trace until an
   email was refused — discovered from the compose screen, after writing the

@@ -11,4 +11,5 @@ pub mod money;
 pub mod numbering;
 pub mod render;
 pub mod settings;
+pub mod update;
 pub mod validation;

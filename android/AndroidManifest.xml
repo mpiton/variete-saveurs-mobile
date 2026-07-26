@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Self-update from within the app (issue 35). Declared here, but still
+         granted by hand once in « Installer des applications inconnues » —
+         the settings screen sends her there rather than let the install fail
+         with no explanation. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="true"
@@ -36,6 +41,11 @@
         <provider
             android:name="dev.dioxus.main.ExportFileProvider"
             android:authorities="fr.variete_saveurs.devis_factures.exports"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <provider
+            android:name="dev.dioxus.main.UpdateFileProvider"
+            android:authorities="fr.variete_saveurs.devis_factures.updates"
             android:exported="false"
             android:grantUriPermissions="true" />
     </application>
