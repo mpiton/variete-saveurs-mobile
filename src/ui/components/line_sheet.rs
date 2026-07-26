@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use dioxus::prelude::*;
 
+use crate::domain::models::LineDraft;
+
 use super::{
     actions::{Button, ButtonVariant},
     feedback::BottomSheet,
@@ -36,6 +38,35 @@ pub struct LineEditorState {
     pub confirm_armed_at: Option<Instant>,
     pub quantity_error: Option<String>,
     pub price_error: Option<String>,
+}
+
+impl LineEditorState {
+    /// What survives a restart: what she typed. The armed-delete window is
+    /// dropped on purpose — it is a 400 ms safety guard, and coming back armed
+    /// would turn it into a trap — and the error messages are recomputed.
+    pub fn to_draft(&self) -> LineDraft {
+        LineDraft {
+            index: self.index,
+            description: self.description.clone(),
+            quantity: self.quantity.clone(),
+            price: self.price.clone(),
+            group: self.group.clone(),
+        }
+    }
+
+    pub fn from_draft(draft: LineDraft) -> Self {
+        Self {
+            index: draft.index,
+            description: draft.description,
+            quantity: draft.quantity,
+            price: draft.price,
+            group: draft.group,
+            confirm_delete: false,
+            confirm_armed_at: None,
+            quantity_error: None,
+            price_error: None,
+        }
+    }
 }
 
 #[component]

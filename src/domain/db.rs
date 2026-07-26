@@ -4,7 +4,8 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params, types::Type};
 
 use super::models::{
-    CatalogItem, ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput,
+    CatalogItem, ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineDraft,
+    LineInput,
 };
 use super::numbering::reserve_number;
 use super::validation::validate_document;
@@ -107,6 +108,16 @@ pub fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             id INTEGER PRIMARY KEY CHECK (id = 1),
             payload_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
+        );
+
+        -- The line she is in the middle of typing, which lives in a sheet and
+        -- was therefore never written anywhere: a WebView the system recycled
+        -- took it with it, while the rest of the draft survived. Its own table
+        -- rather than a column on `draft`, so the schema stays additive — every
+        -- migration here is a CREATE IF NOT EXISTS, and it stays that way.
+        CREATE TABLE IF NOT EXISTS draft_line_editor (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            payload_json TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS settings (
@@ -244,8 +255,49 @@ pub fn load_draft(connection: &Connection) -> rusqlite::Result<Option<DocumentIn
     }
 }
 
+/// Clears the draft *and* the line she was typing: the two are one piece of
+/// work, and an editor surviving its own draft would reopen over a blank form.
 pub fn clear_draft(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute("DELETE FROM draft WHERE id = 1", [])?;
+    clear_line_editor(connection)
+}
+
+pub fn save_line_editor(connection: &Connection, editor: &LineDraft) -> rusqlite::Result<()> {
+    let payload_json = serde_json::to_string(editor)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    connection.execute(
+        "INSERT INTO draft_line_editor (id, payload_json) VALUES (1, ?1)
+         ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json",
+        params![payload_json],
+    )?;
+    Ok(())
+}
+
+/// An unreadable payload is dropped rather than surfaced: the worst outcome is
+/// one lost half-typed line, and refusing to open the form over it would be
+/// worse than the loss.
+pub fn load_line_editor(connection: &Connection) -> rusqlite::Result<Option<LineDraft>> {
+    let Some(payload_json) = connection
+        .query_row(
+            "SELECT payload_json FROM draft_line_editor WHERE id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    match serde_json::from_str(&payload_json) {
+        Ok(editor) => Ok(Some(editor)),
+        Err(_) => {
+            eprintln!("Ignoring unreadable line editor payload");
+            Ok(None)
+        }
+    }
+}
+
+pub fn clear_line_editor(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute("DELETE FROM draft_line_editor WHERE id = 1", [])?;
     Ok(())
 }
 
@@ -513,9 +565,10 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        IssueError, clear_draft, get_document, insert_document, issue_document,
-        list_active_catalog_items, list_catalog, list_documents, load_draft, mark_sent, migrate,
-        open_database, save_draft, search_clients, seed_catalog, upsert_catalog_item,
+        IssueError, LineDraft, clear_draft, get_document, insert_document, issue_document,
+        list_active_catalog_items, list_catalog, list_documents, load_draft, load_line_editor,
+        mark_sent, migrate, open_database, save_draft, save_line_editor, search_clients,
+        seed_catalog, upsert_catalog_item,
     };
     use crate::domain::convert::invoice_draft_from_quote;
     use crate::domain::models::{
@@ -620,6 +673,59 @@ mod tests {
         let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
         save_draft(&connection, &input, "2026-07-22T10:00:00Z").expect("save draft");
         assert_eq!(load_draft(&connection).expect("load draft"), Some(input));
+    }
+
+    #[test]
+    fn the_line_being_typed_survives_as_raw_text() {
+        let (_file, connection) = initialized_connection();
+        // Half-typed on purpose: a price of « 12, » is what a restart has to
+        // give back, and no numeric column could hold it.
+        let editor = LineDraft {
+            index: Some(2),
+            description: "Pièce montée 60 choux".to_string(),
+            quantity: "3".to_string(),
+            price: "12,".to_string(),
+            group: "Sucré".to_string(),
+        };
+
+        save_line_editor(&connection, &editor).expect("save editor");
+
+        assert_eq!(
+            load_line_editor(&connection).expect("load editor"),
+            Some(editor)
+        );
+    }
+
+    #[test]
+    fn clearing_the_draft_takes_the_line_editor_with_it() {
+        let (_file, connection) = initialized_connection();
+        save_draft(
+            &connection,
+            &document_input(DocumentKind::Quote, "Mairie de Lyon"),
+            "2026-07-22T10:00:00Z",
+        )
+        .expect("save draft");
+        save_line_editor(&connection, &LineDraft::default()).expect("save editor");
+
+        clear_draft(&connection).expect("clear draft");
+
+        // An editor outliving its draft would reopen over a blank form.
+        assert_eq!(load_draft(&connection).expect("load draft"), None);
+        assert_eq!(load_line_editor(&connection).expect("load editor"), None);
+    }
+
+    #[test]
+    fn an_unreadable_line_editor_is_dropped_rather_than_raised() {
+        let (_file, connection) = initialized_connection();
+        connection
+            .execute(
+                "INSERT INTO draft_line_editor (id, payload_json) VALUES (1, ?1)",
+                params!["{ not json"],
+            )
+            .expect("write corrupt payload");
+
+        // Losing one half-typed line beats refusing to open the form.
+        assert_eq!(load_line_editor(&connection).expect("load editor"), None);
     }
 
     #[test]
@@ -862,6 +968,7 @@ mod tests {
                 "counters",
                 "documents",
                 "draft",
+                "draft_line_editor",
                 "settings"
             ]
         );

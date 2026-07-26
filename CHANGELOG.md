@@ -100,6 +100,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The line being typed is persisted with the draft. It lived in a sheet, so it
+  existed only in memory: a WebView the system recycled took it with it while
+  the rest of the draft survived, and « Pièce montée 60 choux / 3 / 450,00 € »
+  had simply never happened. It now goes to its own one-row table, on the same
+  debounce as the draft, as raw text — a half-typed « 12, » is a legitimate
+  price that no numeric column can hold. Clearing the draft clears it too, so an
+  editor can never reopen over a blank form. Two things are deliberately not
+  restored: the armed-delete window, a 400 ms safety guard that would come back
+  as a trap, and the validation messages, which are recomputed from the values.
+
 - Back left the screen instead of closing an open bottom sheet, losing the line
   being edited, the catalogue picks or the confirmation about to be answered.
   The sheets are `<dialog>` elements with an `oncancel` handler, but the Android
