@@ -113,3 +113,14 @@ fn the_manifest_points_at_the_adaptive_icon() {
         assert!(adaptive.contains("<monochrome"), "{name}");
     }
 }
+
+/// `dx` scaffolds a `strings.xml` naming the app after the crate; `build.rs`
+/// copies ours over it. Guards the name that ends up under the icon.
+#[test]
+fn the_launcher_carries_the_marque_not_the_crate_name() {
+    let manifest = project_file("android/AndroidManifest.xml");
+    assert!(manifest.contains(r#"android:label="@string/app_name""#));
+
+    let strings = project_file("android/res/values/strings.xml");
+    assert!(strings.contains(r#"<string name="app_name">Variété de Saveurs</string>"#));
+}

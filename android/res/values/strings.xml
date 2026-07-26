@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces the `strings.xml` `dx` scaffolds, which names the app after the
+     crate: « DevisMobile ». That is a developer's name for it. The gérante
+     sees this one under the icon, in the app switcher and in every share
+     sheet, so it is the marque — the same one the documents and the emails
+     already carry. -->
+<resources>
+    <string name="app_name">Variété de Saveurs</string>
+</resources>
