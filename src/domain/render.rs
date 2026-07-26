@@ -9,6 +9,12 @@ use super::money::format_eur;
 const CSS: &str = include_str!("../../templates/document.css");
 const LOGO_BYTES: &[u8] = include_bytes!("../../templates/logo.png");
 
+/// The embedded logo as a data URI. The document header and the splash overlay
+/// (DESIGN §8) paint the same bytes, so the APK never carries a second copy.
+pub fn logo_data_uri() -> String {
+    format!("data:image/png;base64,{}", base64_encode(LOGO_BYTES))
+}
+
 pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
     let (title, number_label, nature) = match &input.kind {
         DocumentKind::Quote => ("DEVIS", "N° de devis", "Offre gratuite et sans engagement"),
@@ -377,7 +383,7 @@ fn base64_encode(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_document_html;
+    use super::{logo_data_uri, render_document_html};
     use crate::domain::models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput};
 
     fn document(kind: DocumentKind) -> DocumentInput {
@@ -574,5 +580,13 @@ mod tests {
         assert!(html.contains("@page"));
         assert!(html.contains(r#"content: "Page " counter(page) " / " counter(pages);"#));
         assert!(html.contains("tbody.group-block"));
+    }
+
+    #[test]
+    fn the_splash_logo_is_the_same_embedded_png_as_the_document_header() {
+        let uri = logo_data_uri();
+
+        assert!(uri.starts_with("data:image/png;base64,iVBORw0KGgo"));
+        assert!(render_document_html(&document(DocumentKind::Quote), 9).contains(&uri));
     }
 }

@@ -30,6 +30,7 @@ use super::{
     preview::Preview,
     record::Record,
     settings::Settings,
+    splash::Splash,
 };
 
 const APP_CSS: Asset = asset!("/assets/app.css");
@@ -38,6 +39,14 @@ const APP_CSS: Asset = asset!("/assets/app.css");
 const PRE_RENDER_STYLE: &str = concat!(
     "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}",
     "@media(prefers-color-scheme:dark){html,body,#main{background:#0C2B27}}",
+    // Splash geometry, mirroring `app.css`: the overlay must cover the screen
+    // on the very first paint, or the home screen shows through it unstyled
+    // for as long as the stylesheet takes to arrive. Timings stay in the
+    // stylesheet — arriving late only shifts the fade, it shows nothing wrong.
+    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#0F3F3A}",
+    "@media(prefers-color-scheme:dark){.splash{background:#0C2B27}}",
+    ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
+    ".splash__logo{position:relative;width:min(46%,220px)}",
 );
 const BACK_EVENT_BRIDGE: &str = r#"
     window.addEventListener("popstate", event => {
@@ -218,6 +227,7 @@ pub fn app() -> Element {
     let history = use_hook(|| Rc::new(AppHistory::new(document::document())));
     let history_context = history.clone();
     use_context_provider(move || history_context);
+    let mut splash_visible = use_signal(|| true);
 
     rsx! {
         document::Meta {
@@ -230,6 +240,11 @@ pub fn app() -> Element {
         HistoryProvider {
             history: move |_| history.clone() as Rc<dyn History>,
             Router::<Route> {}
+        }
+        // Last in the tree so it paints over the router without fighting the
+        // z-index of the screens underneath.
+        if splash_visible() {
+            Splash { on_done: move |_| splash_visible.set(false) }
         }
     }
 }
