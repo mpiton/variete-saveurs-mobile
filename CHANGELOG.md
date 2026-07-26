@@ -21,9 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over 240 ms on an ease-out-quart curve after a 300 ms hold, then the
   overlay fades out at 2 s — 2.24 s in total, inside the 2.5 s budget.
   The backdrop is the `--color-chrome` token the top app bar already
-  uses, so the hand-off to the home screen has no cut and no flash;
-  nothing waits on the app, since the database opens before the first
-  paint. Playback is started from script rather than an `autoplay`
+  uses, which is what shows if the video cannot be decoded; nothing
+  waits on the app, since the database opens before the first paint. Playback is started from script rather than an `autoplay`
   attribute, so under `prefers-reduced-motion: reduce` the loop is
   stopped on its first frame and the logo is left un-animated. It is
   stopped rather than never started because a `<video>` the WebView has
@@ -33,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stylesheet is a linked asset and until it arrives the overlay would
   not cover the home screen. The logo reuses the PNG `domain::render`
   already embeds instead of shipping a second copy, so the video is the
-  only thing the splash adds to the APK (+1.18 MiB).
+  only thing the splash adds to the APK (+1.17 MiB).
   `MainActivity` turns off `mediaPlaybackRequiresUserGesture`, without
   which the WebView gates even muted playback behind a tap.
 
