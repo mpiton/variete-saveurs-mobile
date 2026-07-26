@@ -33,8 +33,12 @@ use super::{
 };
 
 const APP_CSS: Asset = asset!("/assets/app.css");
-const PRE_RENDER_STYLE: &str =
-    "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}";
+/// Painted before the stylesheet lands, so it carries both chromes itself —
+/// the light teal would flash on a phone set to the dark scheme.
+const PRE_RENDER_STYLE: &str = concat!(
+    "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}",
+    "@media(prefers-color-scheme:dark){html,body,#main{background:#0C2B27}}",
+);
 const BACK_EVENT_BRIDGE: &str = r#"
     window.addEventListener("popstate", event => {
         if (Number.isInteger(event.state?.dioxusPosition)) {
