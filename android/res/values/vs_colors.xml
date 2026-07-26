@@ -2,5 +2,5 @@
 <!-- Kept out of the scaffolded `colors.xml` so that file survives the copy
      `build.rs` does. Mirrors the CSS chrome token in `assets/app.css`. -->
 <resources>
-    <color name="vs_chrome">#0F3F3A</color>
+    <color name="vs_chrome">#6B1220</color>
 </resources>

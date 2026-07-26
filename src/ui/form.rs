@@ -12,20 +12,27 @@ use dioxus::prelude::*;
 use tokio::time::sleep;
 
 use crate::domain::{
-    db::{list_active_catalog_items, load_draft, save_draft, search_clients},
-    models::{CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
+    db::{
+        clear_line_editor, list_active_catalog_items, load_draft, load_line_editor, save_draft,
+        save_line_editor, search_clients,
+    },
+    models::{
+        CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineDraft, LineInput,
+    },
     money::{format_eur, parse_eur_to_cents},
+    numbering::next_number,
     validation::{DocumentField, MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
 };
 
 use super::{
     app::{DatabaseContext, OutsideInteraction, Route},
     components::{
-        Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
-        OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
+        Button, ButtonVariant, CatalogPicker, ErrorBlock, IssueConfirmSheet, LineEditorState,
+        LineSheet, OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
     },
     issue::{
-        IssueFlow, IssuePhase, blocks_draft_persistence, field_error, line_has_error, start_issue,
+        IssueFlow, IssuePhase, blocks_draft_persistence, check_before_issue, field_error,
+        line_has_error, start_issue,
     },
 };
 
@@ -42,10 +49,21 @@ pub(super) fn Form() -> Element {
     let suggestions_database = database.clone();
     let preview_database = database.clone();
     let issue_database = database.clone();
+    let number_database = database.clone();
+    let editor_initial_database = database.clone();
+    let editor_database = database.clone();
+    // The number the emission is about to spend, held while she confirms. It is
+    // peeked, never reserved: cancelling costs nothing.
+    let mut confirm_number = use_signal(|| None::<i64>);
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
-    let line_editor = use_signal(|| None::<LineEditorState>);
+    // The line she was typing when the app went away. It lives in a sheet, so
+    // it used to exist only in memory: a WebView the system recycled took it
+    // with it while the rest of the draft survived.
+    let line_editor = use_signal(move || {
+        load_line_editor_state(&editor_initial_database).map(LineEditorState::from_draft)
+    });
     let mut catalog_picker = use_signal(|| None::<Vec<CatalogItem>>);
     let picker_error = use_signal(|| None::<String>);
     let mut client_suggestions = use_signal(Vec::<ClientInput>::new);
@@ -78,6 +96,23 @@ pub(super) fn Form() -> Element {
                 Ok(()) => save_error.set(None),
                 Err(error) => save_error.set(Some(error)),
             }
+        });
+    });
+
+    // Same debounce for the line being typed, self-timed rather than
+    // generation-counted: the snapshot taken here is compared to the signal
+    // after the wait, so only the last keystroke of a burst reaches SQLite.
+    // Closing the sheet writes `None`, which clears the row — the editor never
+    // outlives the line it was editing.
+    use_effect(move || {
+        let snapshot = line_editor.read().as_ref().map(LineEditorState::to_draft);
+        let database = editor_database.clone();
+        spawn(async move {
+            sleep(AUTOSAVE_DEBOUNCE).await;
+            if line_editor.peek().as_ref().map(LineEditorState::to_draft) != snapshot {
+                return;
+            }
+            persist_line_editor(&database, snapshot.as_ref());
         });
     });
 
@@ -337,7 +372,14 @@ pub(super) fn Form() -> Element {
             section { class: "form-section", aria_labelledby: "form-lines-title",
                 h2 { id: "form-lines-title", "Prestations" }
                 if current.lines.is_empty() {
-                    p { "Aucune prestation pour l’instant." }
+                    // « Ajoutez au moins une prestation » used to appear only in
+                    // the block at the very bottom, with nothing marking the
+                    // section it was about — several screens of scroll away.
+                    if let Some(message) = field_error(&issue_errors, DocumentField::Lines) {
+                        p { class: "outlined-field__error", role: "alert", "{message}" }
+                    } else {
+                        p { "Aucune prestation pour l’instant." }
+                    }
                 } else {
                     ul { class: "line-list",
                         // Index keys are acceptable here: rows are stateless
@@ -457,10 +499,20 @@ pub(super) fn Form() -> Element {
                     Button {
                         label: issue_label,
                         loading: issuing,
+                        // Émettre is the one irreversible act in the app; it
+                        // asks before spending the number, not after.
                         onclick: move |_| {
-                            let input = draft.read().clone();
-                            if let Some(input) = input {
-                                start_issue(issue_flow, issue_database.clone(), input);
+                            let Some(input) = draft.read().clone() else {
+                                return;
+                            };
+                            // Nothing is asked of her for a document that
+                            // cannot be issued: the errors surface directly.
+                            if !check_before_issue(issue_flow, &input) {
+                                return;
+                            }
+                            match peek_next_number(&number_database, &input.kind) {
+                                Ok(number) => confirm_number.set(Some(number)),
+                                Err(error) => save_error.set(Some(error)),
                             }
                         },
                     }
@@ -477,13 +529,29 @@ pub(super) fn Form() -> Element {
                 on_move_down: move |_| move_draft_line(draft, edit_generation, line_editor, false),
             }
 
+            if let Some(number) = confirm_number() {
+                IssueConfirmSheet {
+                    kind: current.kind.clone(),
+                    number,
+                    open: true,
+                    on_cancel: move |_| confirm_number.set(None),
+                    on_confirm: move |_| {
+                        confirm_number.set(None);
+                        if let Some(input) = draft.read().clone() {
+                            start_issue(issue_flow, issue_database.clone(), input);
+                        }
+                    },
+                }
+            }
+
             CatalogPicker {
                 state: catalog_picker,
+                // The sheet stays open: the picker owns its own closing now,
+                // so five items cost one visit instead of five.
                 on_pick: move |item| {
                     apply_edit(draft, edit_generation, |draft| {
                         draft.lines.push(line_from_catalog_item(&item));
                     });
-                    catalog_picker.set(None);
                 },
                 on_free_form: move |_| {
                     catalog_picker.set(None);
@@ -720,6 +788,43 @@ fn persist_draft(database: &DatabaseContext, draft: &DocumentInput) -> Result<()
     save_draft(&connection, draft, &Utc::now().to_rfc3339()).map_err(|error| {
         eprintln!("Draft auto-save failed: {error}");
         "Les modifications ne sont pas enregistrées.".to_string()
+    })
+}
+
+fn load_line_editor_state(database: &DatabaseContext) -> Option<LineDraft> {
+    let database = database.as_ref().ok()?;
+    let connection = database.lock().ok()?;
+    load_line_editor(&connection).ok().flatten()
+}
+
+/// Failures here are swallowed: losing a half-typed line is a small harm, and
+/// an error block about it would sit on top of the form she is typing in.
+fn persist_line_editor(database: &DatabaseContext, editor: Option<&LineDraft>) {
+    let Ok(database) = database.as_ref() else {
+        return;
+    };
+    let Ok(connection) = database.lock() else {
+        return;
+    };
+    let result = match editor {
+        Some(editor) => save_line_editor(&connection, editor),
+        None => clear_line_editor(&connection),
+    };
+    if let Err(error) = result {
+        eprintln!("Line editor persistence failed: {error}");
+    }
+}
+
+/// Reads the counter without touching it — the confirmation sheet needs to name
+/// the number, and a cancelled emission must leave the sequence untouched.
+fn peek_next_number(database: &DatabaseContext, kind: &DocumentKind) -> Result<i64, String> {
+    let database = database.as_ref().map_err(Clone::clone)?;
+    let connection = database
+        .lock()
+        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    next_number(&connection, kind).map_err(|error| {
+        eprintln!("Number peek failed: {error}");
+        "Impossible de lire le prochain numéro.".to_string()
     })
 }
 

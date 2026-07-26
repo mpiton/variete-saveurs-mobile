@@ -38,10 +38,16 @@ pub struct EmailPlaceholders {
     pub validity_date: Option<String>,
 }
 
-/// Ready-to-send subject and HTML body.
+/// What the compose screen starts from. The HTML body is not here: it is built
+/// at send time by `render_email_html`, from whatever text she ended up with.
 pub struct EmailContent {
     pub subject: String,
-    pub body_html: String,
+    /// Plain text, never markup: the paragraphs addressed to the client.
+    /// `CLAUDE.md` puts a template editor out of scope — « modèle fixe, texte
+    /// retouchable ». Handing the whole template to a textarea made the
+    /// template the editable thing, and one keystroke inside a tag shipped a
+    /// broken mail to a client.
+    pub message: String,
 }
 
 /// Off-device archive address of a send (ADR 0002 — the BCC copy). A
@@ -119,7 +125,30 @@ pub trait Mailer {
 /// Builds the French subject (« Devis n° 10 — Variété de Saveurs ») and the
 /// branded HTML body. User-entered values are HTML-escaped.
 pub fn render_email(kind: &DocumentKind, values: &EmailPlaceholders) -> EmailContent {
-    let doc_label = format!("{} n° {}", kind.label().to_lowercase(), values.doc_number);
+    let message = default_message(kind, values);
+    EmailContent {
+        subject: format!(
+            "{} n° {} — Variété de Saveurs",
+            kind.label(),
+            values.doc_number
+        ),
+        message,
+    }
+}
+
+/// The pre-filled text she may retouch before sending. Plain text: the fixed
+/// template wraps it at send time.
+pub fn default_message(kind: &DocumentKind, values: &EmailPlaceholders) -> String {
+    format!(
+        "Vous trouverez ci-joint votre {} d'un montant de {}.\n\nN'hésitez pas à nous solliciter pour toute question.",
+        doc_label(kind, values.doc_number),
+        format_eur(values.total_cents)
+    )
+}
+
+/// Wraps her plain text into the fixed template. Blank lines split paragraphs,
+/// single newlines become `<br>`, and everything she typed is escaped.
+pub fn render_email_html(kind: &DocumentKind, values: &EmailPlaceholders, message: &str) -> String {
     let validity_paragraph = match (kind, non_empty(values.validity_date.as_deref())) {
         (DocumentKind::Quote, Some(date)) => format!(
             "<p class=\"email-validity\">Cette offre est valable jusqu'au {}.</p>",
@@ -128,23 +157,65 @@ pub fn render_email(kind: &DocumentKind, values: &EmailPlaceholders) -> EmailCon
         _ => String::new(),
     };
 
-    // User-controlled text is substituted LAST: inserted values are never
-    // re-scanned, so a client named « {total} » stays literal text instead
-    // of being expanded by a later replacement.
-    let body_html = TEMPLATE
-        .replace("{validity_paragraph}", &validity_paragraph)
-        .replace("{doc_label}", &doc_label)
-        .replace("{total}", &format_eur(values.total_cents))
-        .replace("{client_name}", &encode_text(&values.client_name));
+    // One pass, because chained `replace` calls are not one: each of them
+    // re-scans what the previous ones inserted, so a client named « {message} »
+    // was substituted into the greeting and then expanded by the next call,
+    // dropping the whole message block onto the « Bonjour » line. Escaping does
+    // not help — `encode_text` escapes HTML, not braces.
+    fill(
+        TEMPLATE,
+        &[
+            ("{validity_paragraph}", &validity_paragraph),
+            ("{client_name}", &encode_text(&values.client_name)),
+            ("{message}", &message_html(message)),
+        ],
+    )
+}
 
-    EmailContent {
-        subject: format!(
-            "{} n° {} — Variété de Saveurs",
-            kind.label(),
-            values.doc_number
-        ),
-        body_html,
+/// Substitutes every placeholder in a single left-to-right pass: what a value
+/// carries lands in the output and is never looked at again.
+fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(brace) = rest.find('{') {
+        out.push_str(&rest[..brace]);
+        rest = &rest[brace..];
+        match values
+            .iter()
+            .find_map(|(token, value)| rest.strip_prefix(token).map(|tail| (*value, tail)))
+        {
+            Some((value, tail)) => {
+                out.push_str(value);
+                rest = tail;
+            }
+            // An unknown `{` is literal text — the template owns its tokens.
+            None => {
+                out.push('{');
+                rest = &rest[1..];
+            }
+        }
     }
+    out.push_str(rest);
+    out
+}
+
+fn message_html(message: &str) -> String {
+    message
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|paragraph| !paragraph.is_empty())
+        .map(|paragraph| {
+            format!(
+                "<p style=\"margin:0 0 16px 0;\">{}</p>",
+                encode_text(paragraph).replace('\n', "<br>")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n              ")
+}
+
+fn doc_label(kind: &DocumentKind, number: i64) -> String {
+    format!("{} n° {number}", kind.label().to_lowercase())
 }
 
 fn non_empty(value: Option<&str>) -> Option<&str> {
@@ -156,7 +227,8 @@ mod tests {
     use std::cell::RefCell;
 
     use super::{
-        Attachment, EmailPlaceholders, MailConfig, MailError, Mailer, archive_address, render_email,
+        Attachment, EmailPlaceholders, MailConfig, MailError, Mailer, archive_address,
+        default_message, render_email, render_email_html,
     };
     use crate::domain::models::DocumentKind;
 
@@ -169,41 +241,52 @@ mod tests {
         }
     }
 
+    /// The body as it goes out: her message wrapped in the fixed template.
+    fn rendered(kind: &DocumentKind, values: &EmailPlaceholders) -> String {
+        render_email_html(kind, values, &default_message(kind, values))
+    }
+
     #[test]
     fn quote_email_fills_every_placeholder_and_keeps_validity() {
         let content = render_email(&DocumentKind::Quote, &quote_values());
+        let body = rendered(&DocumentKind::Quote, &quote_values());
 
         assert_eq!(content.subject, "Devis n° 10 — Variété de Saveurs");
-        assert!(content.body_html.contains("devis n° 10"));
-        assert!(content.body_html.contains("Marie Dupont"));
-        assert!(
-            content
-                .body_html
-                .contains(&crate::domain::money::format_eur(139_435))
-        );
-        assert!(content.body_html.contains("valable jusqu'au 24/08/2026"));
+        assert!(body.contains("devis n° 10"));
+        assert!(body.contains("Marie Dupont"));
+        assert!(body.contains(&crate::domain::money::format_eur(139_435)));
+        assert!(body.contains("valable jusqu'au 24/08/2026"));
+    }
+
+    #[test]
+    fn the_editable_message_carries_no_markup() {
+        // The whole point of the split: she edits sentences, not a template.
+        let message = default_message(&DocumentKind::Quote, &quote_values());
+
+        assert!(message.contains("devis n° 10"));
+        assert!(!message.contains('<'));
+        assert!(!message.contains('{'));
     }
 
     #[test]
     fn invoice_email_drops_the_validity_line() {
-        let content = render_email(
-            &DocumentKind::Invoice,
-            &EmailPlaceholders {
-                doc_number: 3,
-                validity_date: None,
-                ..quote_values()
-            },
-        );
+        let values = EmailPlaceholders {
+            doc_number: 3,
+            validity_date: None,
+            ..quote_values()
+        };
+        let content = render_email(&DocumentKind::Invoice, &values);
+        let body = rendered(&DocumentKind::Invoice, &values);
 
         assert_eq!(content.subject, "Facture n° 3 — Variété de Saveurs");
-        assert!(content.body_html.contains("facture n° 3"));
-        assert!(!content.body_html.contains("valable jusqu'au"));
-        assert!(!content.body_html.contains("email-validity"));
+        assert!(body.contains("facture n° 3"));
+        assert!(!body.contains("valable jusqu'au"));
+        assert!(!body.contains("email-validity"));
     }
 
     #[test]
     fn quote_without_a_validity_date_drops_the_line_instead_of_dangling() {
-        let content = render_email(
+        let body = rendered(
             &DocumentKind::Quote,
             &EmailPlaceholders {
                 validity_date: None,
@@ -211,49 +294,62 @@ mod tests {
             },
         );
 
-        assert!(!content.body_html.contains("valable jusqu'au"));
+        assert!(!body.contains("valable jusqu'au"));
     }
 
     #[test]
     fn email_escapes_user_text() {
-        let content = render_email(
+        let values = EmailPlaceholders {
+            client_name: "<script>alert(1)</script>".to_string(),
+            ..quote_values()
+        };
+        let body = rendered(&DocumentKind::Quote, &values);
+
+        assert!(!body.contains("<script>"));
+        assert!(body.contains("&lt;script&gt;"));
+    }
+
+    #[test]
+    fn a_retouched_message_cannot_smuggle_markup_in() {
+        let body = render_email_html(
             &DocumentKind::Quote,
-            &EmailPlaceholders {
-                client_name: "<script>alert(1)</script>".to_string(),
-                ..quote_values()
-            },
+            &quote_values(),
+            "<script>alert(1)</script>",
         );
 
-        assert!(!content.body_html.contains("<script>"));
-        assert!(content.body_html.contains("&lt;script&gt;"));
+        assert!(!body.contains("<script>"));
+        assert!(body.contains("&lt;script&gt;"));
     }
 
     #[test]
     fn client_name_cannot_retrigger_placeholder_substitution() {
-        let content = render_email(
-            &DocumentKind::Quote,
-            &EmailPlaceholders {
-                client_name: "{total}".to_string(),
-                ..quote_values()
-            },
-        );
+        // `{message}` on purpose: it is a *live* token substituted after the
+        // client name. The previous version of this test used `{total}`, which
+        // stopped being a token when the body moved to plain text, so it passed
+        // no matter what the substitution did.
+        let values = EmailPlaceholders {
+            client_name: "{message}".to_string(),
+            ..quote_values()
+        };
+        let body = render_email_html(&DocumentKind::Quote, &values, "Le corps du message.");
 
-        assert!(content.body_html.contains("Bonjour {total},"));
+        assert!(body.contains("Bonjour {message},"));
+        // And the real message still landed exactly once, where it belongs.
+        assert_eq!(body.matches("Le corps du message.").count(), 1);
     }
 
     #[test]
     fn rendered_email_leaves_no_unfilled_placeholder() {
         for kind in [DocumentKind::Quote, DocumentKind::Invoice] {
-            let content = render_email(&kind, &quote_values());
+            let body = rendered(&kind, &quote_values());
             for placeholder in [
                 "{client_name}",
-                "{doc_label}",
-                "{total}",
+                "{message}",
                 "{validity_date}",
                 "{validity_paragraph}",
             ] {
                 assert!(
-                    !content.body_html.contains(placeholder),
+                    !body.contains(placeholder),
                     "{kind:?} body still contains {placeholder}"
                 );
             }

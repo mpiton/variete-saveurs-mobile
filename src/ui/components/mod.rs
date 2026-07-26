@@ -3,13 +3,17 @@ mod catalog_picker;
 mod documents;
 mod feedback;
 mod fields;
+mod issue_sheet;
 mod line_sheet;
 mod share_sheet;
 
 pub use actions::{Button, ButtonVariant, FabMenu, SegmentedButton, issue_label};
-pub use catalog_picker::{CatalogPicker, group_catalog_items, line_from_catalog_item};
+pub use catalog_picker::{
+    CatalogPicker, group_catalog_items, item_price_detail, line_from_catalog_item,
+};
 pub use documents::{BadgeKind, DocumentCard, StatusBadge};
 pub use feedback::{BottomSheet, EmptyState, ErrorBlock, Snackbar};
 pub use fields::{OutlinedField, OutlinedTextArea};
+pub use issue_sheet::IssueConfirmSheet;
 pub use line_sheet::{LineEditorState, LineSheet};
 pub use share_sheet::{ShareFormat, SharePhase, ShareSheet, ShareState};

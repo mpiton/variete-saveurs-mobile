@@ -67,6 +67,16 @@ pub fn CatalogPicker(
     on_pick: EventHandler<CatalogItem>,
     on_free_form: EventHandler<MouseEvent>,
 ) -> Element {
+    // Picks accumulate instead of closing the sheet on each one: a traiteur
+    // quote is five to ten items, and closing after every chip made each one
+    // cost a reopen. The count is the receipt for taps that land behind the
+    // scrim; it resets with the sheet.
+    let mut added = use_signal(|| 0usize);
+    let mut close = move || {
+        added.set(0);
+        state.set(None);
+    };
+
     let Some(items) = state.read().clone() else {
         return rsx! {};
     };
@@ -77,7 +87,7 @@ pub fn CatalogPicker(
             id: "catalog-picker".to_string(),
             title: "Ajouter une prestation".to_string(),
             open: true,
-            on_dismiss: move |_| state.set(None),
+            on_dismiss: move |_| close(),
             if groups.is_empty() {
                 p { "Aucun article actif au catalogue. Créez-le depuis l’écran Catalogue." }
             } else {
@@ -96,36 +106,66 @@ pub fn CatalogPicker(
                                     aria_label: chip_label(&item),
                                     onclick: {
                                         let item = item.clone();
-                                        move |_| on_pick.call(item.clone())
+                                        move |_| {
+                                            added += 1;
+                                            on_pick.call(item.clone());
+                                        }
                                     },
                                     span { class: "catalog-chip__name", "{item.name}" }
-                                    span { class: "catalog-chip__price", "{format_eur(item.unit_price_cents)}" }
+                                    span { class: "catalog-chip__price", "{item_price_detail(&item)}" }
                                 }
                             }
                         }
                     }
                 }
             }
+            if added() > 0 {
+                p { class: "catalog-picker__count", role: "status", aria_live: "polite",
+                    "{added_label(added())}"
+                }
+            }
             Button {
                 label: "Saisie libre".to_string(),
                 variant: ButtonVariant::Tonal,
-                onclick: move |event| on_free_form.call(event),
+                onclick: move |event| {
+                    added.set(0);
+                    on_free_form.call(event);
+                },
+            }
+            Button {
+                label: "Terminé".to_string(),
+                variant: ButtonVariant::Filled,
+                onclick: move |_| close(),
             }
         }
     }
 }
 
+/// Price as the Catalogue screen writes it — with the unit when the item has
+/// one. A traiteur sells to the piece: the unit is what makes the price read.
+pub fn item_price_detail(item: &CatalogItem) -> String {
+    let price = format_eur(item.unit_price_cents);
+    match item.unit.as_deref().map(str::trim) {
+        Some(unit) if !unit.is_empty() => format!("{price} / {unit}"),
+        _ => price,
+    }
+}
+
+fn added_label(count: usize) -> String {
+    if count > 1 {
+        format!("{count} prestations ajoutées")
+    } else {
+        format!("{count} prestation ajoutée")
+    }
+}
+
 fn chip_label(item: &CatalogItem) -> String {
-    format!(
-        "Ajouter {} ({})",
-        item.name,
-        format_eur(item.unit_price_cents)
-    )
+    format!("Ajouter {} ({})", item.name, item_price_detail(item))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{group_catalog_items, line_from_catalog_item};
+    use super::{added_label, chip_label, group_catalog_items, line_from_catalog_item};
     use crate::domain::models::{CatalogItem, LineInput};
 
     fn item(id: i64, name: &str, group_name: Option<&str>, unit_price_cents: i64) -> CatalogItem {
@@ -187,5 +227,28 @@ mod tests {
                 unit_price_cents: 45_000,
             }
         );
+    }
+
+    #[test]
+    fn the_chip_carries_the_unit_like_the_catalogue_row_does() {
+        // The two used to format the same item differently: the Catalogue
+        // screen showed « 0,85 € / pièce », the chip only « 0,85 € ». For a
+        // traiteur selling to the piece, the unit is what makes a price read.
+        assert_eq!(
+            chip_label(&item(1, "Mini Burgers", Some("Salé"), 85)),
+            "Ajouter Mini Burgers (0,85 € / pièce)"
+        );
+
+        let without_unit = CatalogItem {
+            unit: None,
+            ..item(2, "Café", None, 150)
+        };
+        assert_eq!(chip_label(&without_unit), "Ajouter Café (1,50 €)");
+    }
+
+    #[test]
+    fn the_added_count_agrees_in_number() {
+        assert_eq!(added_label(1), "1 prestation ajoutée");
+        assert_eq!(added_label(3), "3 prestations ajoutées");
     }
 }

@@ -41,7 +41,9 @@ pub fn BottomSheet(
             },
             section {
                 class: "bottom-sheet",
-                div { class: "bottom-sheet__handle", aria_hidden: "true" }
+                // No drag handle: in M3 the handle *is* the drag affordance, and
+                // these sheets are not draggable. Dismissal is the scrim below,
+                // the Back gesture, or the sheet's own cancel action.
                 h2 { id: title_id, "{title}" }
                 div {
                     class: "bottom-sheet__content",
@@ -115,7 +117,6 @@ pub fn EmptyState(
     onclick: EventHandler<MouseEvent>,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
-    #[props(default)] error: bool,
 ) -> Element {
     rsx! {
         section { class: "empty-state",
@@ -126,7 +127,6 @@ pub fn EmptyState(
                 variant: ButtonVariant::Tonal,
                 disabled,
                 loading,
-                error,
                 onclick: move |event| onclick.call(event),
             }
         }

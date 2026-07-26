@@ -51,10 +51,16 @@ pub fn ShareSheet(
     rsx! {
         BottomSheet {
             id: "share-sheet".to_string(),
-            title: "Partager le document".to_string(),
+            // PRODUCT.md keeps the three deliveries at parity, and printing was
+            // the one the app never named — it is reached from here, through the
+            // Android chooser, so this is where it has to be written.
+            title: "Partager ou imprimer".to_string(),
             open,
             loading,
             on_dismiss: move |_| state.write().open = false,
+            p { class: "share-sheet__hint",
+                "Choisissez le fichier, puis l’application — messagerie, WhatsApp ou impression."
+            }
             Button {
                 label: pdf_name,
                 variant: ButtonVariant::Tonal,

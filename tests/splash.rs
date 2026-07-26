@@ -1,5 +1,5 @@
 //! DESIGN §8: the in-app splash loops `assets/splash-loop.mp4` behind the real
-//! `templates/logo.png`, on the chrome teal, for at most 2.5 s. The asset is
+//! `templates/logo.png`, on the chrome red, for at most 2.5 s. The asset is
 //! committed and the timings are split between CSS and Rust — this guards the
 //! file, keeps the two halves in step, and pins the reduced-motion contract.
 
@@ -94,13 +94,13 @@ fn the_video_asset_stays_inside_the_apk_budget_and_carries_no_sound() {
 }
 
 #[test]
-fn the_splash_paints_on_the_chrome_teal_so_the_hand_off_is_invisible() {
+fn the_splash_paints_on_the_chrome_red_so_the_hand_off_is_invisible() {
     let css = project_file("assets/app.css");
     let splash = rule_body(&css, ".splash");
 
     assert!(
         splash.contains("background: var(--color-chrome);"),
-        "the splash backdrop must be the chrome token, not a hard-coded teal"
+        "the splash backdrop must be the chrome token, not a hard-coded red"
     );
     assert!(
         splash.contains("position: fixed;") && splash.contains("inset: 0;"),
@@ -229,7 +229,7 @@ fn the_overlay_covers_the_screen_before_the_stylesheet_arrives() {
         "place-items:center",
         // Without a backdrop the overlay is transparent and hides nothing.
         // Trailing `;`, so this cannot match the `html,body,#main` rule.
-        "background:#0F3F3A;",
+        "background:#6B1220;",
         ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
         // Unsized, the logo renders at its full intrinsic width.
         ".splash__logo{position:relative;width:min(46%,220px);",
@@ -281,10 +281,13 @@ fn playback_starts_on_mount_and_never_during_render() {
         .find("eval(START_PLAYBACK)")
         .expect("the start script must be evaluated");
 
+    // The rule is about the *player*, not about scripting in general: counting
+    // every `document::eval` guarded the symptom and broke the day the timer
+    // needed to read a media query.
     assert_eq!(
-        splash_rs.matches("document::eval").count(),
+        splash_rs.matches("eval(START_PLAYBACK)").count(),
         1,
-        "the mount handler must be the only place that runs script"
+        "the mount handler must be the only place that starts playback"
     );
     assert!(
         start > mount,
@@ -328,5 +331,57 @@ fn the_player_is_wired_to_the_bundled_assets_and_stays_silent() {
         project_file("android/MainActivity.kt")
             .contains("mediaPlaybackRequiresUserGesture = false"),
         "the WebView must allow the splash to start without a gesture"
+    );
+}
+
+/// « Remove animations » freezes the overlay on its first frame — which turns
+/// the brand beat into a plain wait, since nothing behind it is loading. The
+/// Rust timer has to take the same branch the CSS and the player already take.
+#[test]
+fn reduced_motion_shortens_the_wait_instead_of_freezing_it() {
+    let splash_rs = project_file("src/ui/splash.rs");
+
+    assert!(
+        splash_rs.contains("REDUCED_SPLASH_DURATION"),
+        "the timer must have a reduced-motion branch, not only the animations"
+    );
+    assert!(
+        splash_rs.contains("prefers-reduced-motion: reduce"),
+        "the branch must be driven by the media query itself"
+    );
+
+    let millis = |name: &str| -> u64 {
+        splash_rs
+            .split(name)
+            .nth(1)
+            .and_then(|rest| rest.split("from_millis(").nth(1))
+            .and_then(|rest| rest.split(')').next())
+            .and_then(|value| value.trim().parse().ok())
+            .unwrap_or_else(|| panic!("missing duration for {name}"))
+    };
+    let reduced = millis("const REDUCED_SPLASH_DURATION");
+    let full = millis("const SPLASH_DURATION");
+    assert!(
+        reduced < full,
+        "the reduced-motion wait ({reduced} ms) must be shorter than the full beat ({full} ms)"
+    );
+    // A splash that vanishes on the first frame reads as a glitch.
+    assert!(reduced >= 200, "too short to avoid reading as a flash");
+}
+
+/// The overlay is brand time, and nothing waits on it: a tap must end it. She
+/// opens the app several times in an evening and has seen the logo already.
+#[test]
+fn the_splash_can_be_dismissed_by_tapping_it() {
+    let splash_rs = project_file("src/ui/splash.rs");
+    let overlay = splash_rs
+        .split("class: \"splash\"")
+        .nth(1)
+        .and_then(|rest| rest.split("video {").next())
+        .expect("the overlay must exist");
+
+    assert!(
+        overlay.contains("onclick:") && overlay.contains("on_done.call(())"),
+        "tapping the overlay must dismiss it"
     );
 }

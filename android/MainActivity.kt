@@ -122,27 +122,67 @@ class MainActivity : WryActivity() {
 
     private fun applySystemBarAppearance(config: Configuration = resources.configuration) {
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            // The status bar always sits on the teal chrome.
+            // The status bar always sits on the red chrome.
             isAppearanceLightStatusBars = false
             // The navigation bar sits on the content background on most
-            // screens; the form and the preview end on the teal action bar,
+            // screens; the form and the preview end on the red action bar,
             // where dark icons are wrong — but only in the light scheme.
             isAppearanceLightNavigationBars = !isNightMode(config)
         }
     }
 
+    /**
+     * Back closes an open bottom sheet before it moves in history.
+     *
+     * The sheets are `<dialog>` elements with an `oncancel` handler, but this
+     * callback is registered as always-enabled: it consumed the back event and
+     * called `goBack()` straight away, so the WebView never saw the key and the
+     * handler never ran. Back left the screen instead of closing the sheet —
+     * losing the line being edited, the catalogue picks, the confirmation about
+     * to be answered. Confirmed on device before this fix.
+     *
+     * `evaluateJavascript` answers on the UI thread a few milliseconds later,
+     * so the decision belongs in its callback rather than inline.
+     */
     private fun navigateBack() {
-        if (::webView.isInitialized && webView.canGoBack()) {
-            webView.goBack()
-        } else {
+        if (!::webView.isInitialized) {
             finish()
+            return
+        }
+        webView.evaluateJavascript(DISMISS_OPEN_SHEET) { dismissed ->
+            if (dismissed != "true") {
+                if (webView.canGoBack()) webView.goBack() else finish()
+            }
         }
     }
 
     private companion object {
-        val CHROME_COLOR_LIGHT: Int = Color.rgb(15, 63, 58)
-        val CHROME_COLOR_DARK: Int = Color.rgb(12, 43, 39)
+        val CHROME_COLOR_LIGHT: Int = Color.rgb(107, 18, 32)
+        val CHROME_COLOR_DARK: Int = Color.rgb(74, 12, 22)
         val REPLAY_DELAYS_MS = longArrayOf(0L, 300L, 1000L, 3000L)
+
+        /**
+         * Cancels the topmost open sheet and reports whether there was one.
+         *
+         * `cancel` is the event the sheet already listens to — the same one
+         * Escape fires in a desktop browser — so dismissal keeps going through
+         * the component's own handler, which knows not to close a sheet whose
+         * job is still running. A sheet that refuses still counts as handled:
+         * back must not walk away from a running export either.
+         *
+         * Dispatched with `bubbles: true` although `cancel` normally does not
+         * bubble: it has to reach the handler whether the framework binds the
+         * listener on the element or delegates it at the document root.
+         */
+        const val DISMISS_OPEN_SHEET = """
+            (function () {
+                const open = document.querySelectorAll('dialog[open]');
+                const sheet = open[open.length - 1];
+                if (!sheet) { return false; }
+                sheet.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+                return true;
+            })()
+        """
     }
 }
 

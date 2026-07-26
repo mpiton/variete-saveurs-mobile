@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{Local, Utc};
 use dioxus::prelude::*;
 use rusqlite::Connection;
 use tokio::time::sleep;
@@ -30,10 +30,7 @@ use super::{
         StatusBadge,
     },
     compose::SendNotice,
-    issue::{
-        ExportJobState, ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow,
-        retry_export, start_export, use_export_notice_dismiss,
-    },
+    issue::{ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow, retry_export},
     share::{share_file_names, use_share_flow},
 };
 
@@ -108,8 +105,6 @@ pub(super) fn Record(id: i64) -> Element {
     let navigator = use_navigator();
     let issue_flow = use_context::<IssueFlow>();
     let share = use_share_flow();
-    let export_state = use_signal_sync(|| ExportJobState::Ready);
-    use_export_notice_dismiss(export_state);
     // Conversion (task 23): `Some`-like flags for the replace-draft
     // confirmation sheet and the last conversion failure, mirroring the
     // home's new-draft flow (task 13).
@@ -220,8 +215,6 @@ pub(super) fn Record(id: i64) -> Element {
             let (pdf_name, png_name) = share_file_names(&input.kind, document.number);
             let share_input = input.clone();
             let share_number = document.number;
-            let export_input = input.clone();
-            let export_number = document.number;
             let convert_database = database.clone();
             let convert_quote = document.clone();
             let confirm_database = database.clone();
@@ -230,12 +223,6 @@ pub(super) fn Record(id: i64) -> Element {
             let duplicate_document = document.clone();
             let confirm_duplicate_database = database.clone();
             let confirm_duplicate_document = document.clone();
-            let manual_export_running = matches!(&*export_state.read(), ExportJobState::Running);
-            let (manual_export_notice, manual_export_error) = match &*export_state.read() {
-                ExportJobState::Done(message) => (Some(message.clone()), None),
-                ExportJobState::Failed(message) => (None, Some(message.clone())),
-                _ => (None, None),
-            };
 
             rsx! {
                 section { class: "screen record-screen",
@@ -267,6 +254,15 @@ pub(super) fn Record(id: i64) -> Element {
                                 }
                             }
                         }
+                        // « Voir le document » belongs to the document, not to
+                        // the bar of things you can do with it.
+                        Button {
+                            label: "Aperçu".to_string(),
+                            variant: ButtonVariant::Outlined,
+                            onclick: move |_| {
+                                navigator.push(Route::Preview { document: Some(id) });
+                            },
+                        }
                     }
 
                     if export_running {
@@ -281,12 +277,6 @@ pub(super) fn Record(id: i64) -> Element {
                             label: "Réessayer l’export".to_string(),
                             variant: ButtonVariant::Tonal,
                             onclick: move |_| retry_export(issue_flow),
-                        }
-                    }
-                    if let Some(message) = manual_export_error {
-                        ErrorBlock {
-                            title: "Export impossible".to_string(),
-                            message,
                         }
                     }
                     if let Some(message) = share.error() {
@@ -336,23 +326,67 @@ pub(super) fn Record(id: i64) -> Element {
                         }
                     }
 
+                    // Accounting maintenance, not delivery: these two leave the
+                    // thumb zone to the two actions that reach the client.
+                    div { class: "record-secondary-actions",
+                        if show_convert {
+                            Button {
+                                label: "Convertir en facture".to_string(),
+                                variant: ButtonVariant::Outlined,
+                                onclick: move |_| {
+                                    request_conversion(
+                                        &convert_database,
+                                        &convert_quote,
+                                        navigator,
+                                        convert_confirmation,
+                                        convert_error,
+                                    );
+                                },
+                            }
+                        }
+                        Button {
+                            label: "Dupliquer".to_string(),
+                            variant: ButtonVariant::Outlined,
+                            onclick: move |_| {
+                                request_duplication(
+                                    &duplicate_database,
+                                    &duplicate_document,
+                                    navigator,
+                                    duplicate_confirmation,
+                                    duplicate_error,
+                                );
+                            },
+                        }
+                    }
+
                     div { class: "record-sticky",
-                        footer { class: "chrome-action-bar record-action-bar", aria_label: "Actions du document",
-                            Button {
-                                label: "Aperçu".to_string(),
-                                variant: ButtonVariant::Tonal,
-                                onclick: move |_| {
-                                    navigator.push(Route::Preview { document: Some(id) });
-                                },
+                        // Inside the sticky block, not after it: rendered after
+                        // the bar these were painted underneath it, so « Devis
+                        // n° 10 émis » never reached the screen.
+                        if let Some(message) = send_notice_message {
+                            Snackbar { message }
+                        }
+                        if let Some(message) = notice {
+                            Snackbar { message }
+                        }
+                        footer { class: "chrome-action-bar record-action-bar", aria_label: "Remettre le document",
+                            if !data.email_configured {
+                                p { class: "record-action-hint",
+                                    "Envoi indisponible : configurez la clé Brevo et l’expéditeur."
+                                }
+                                // Was an inline link of 63 × 19 px — the only
+                                // way to the settings once the home prompt is
+                                // dismissed, at a third of the touch floor.
+                                Button {
+                                    label: "Ouvrir les Réglages".to_string(),
+                                    variant: ButtonVariant::Text,
+                                    onclick: move |_| {
+                                        navigator.push(Route::Settings {});
+                                    },
+                                }
                             }
-                            Button {
-                                label: "Exporter le PDF / PNG".to_string(),
-                                variant: ButtonVariant::Tonal,
-                                loading: manual_export_running,
-                                onclick: move |_| {
-                                    start_export(export_state, export_input.clone(), export_number);
-                                },
-                            }
+                            // PRODUCT.md: the delivery paths are at parity, so
+                            // neither takes the filled weight over the other.
                             Button {
                                 label: "Partager".to_string(),
                                 variant: ButtonVariant::Tonal,
@@ -367,51 +401,7 @@ pub(super) fn Record(id: i64) -> Element {
                                     navigator.push(Route::Compose { id });
                                 },
                             }
-                            if !data.email_configured {
-                                p { class: "record-action-hint",
-                                    "Envoi indisponible : configurez la clé Brevo et l’expéditeur dans "
-                                    Link { to: Route::Settings {}, "Réglages" }
-                                    "."
-                                }
-                            }
-                            if show_convert {
-                                Button {
-                                    label: "Convertir en facture".to_string(),
-                                    variant: ButtonVariant::Tonal,
-                                    onclick: move |_| {
-                                        request_conversion(
-                                            &convert_database,
-                                            &convert_quote,
-                                            navigator,
-                                            convert_confirmation,
-                                            convert_error,
-                                        );
-                                    },
-                                }
-                            }
-                            Button {
-                                label: "Dupliquer".to_string(),
-                                variant: ButtonVariant::Tonal,
-                                onclick: move |_| {
-                                    request_duplication(
-                                        &duplicate_database,
-                                        &duplicate_document,
-                                        navigator,
-                                        duplicate_confirmation,
-                                        duplicate_error,
-                                    );
-                                },
-                            }
                         }
-                    }
-                    if let Some(message) = manual_export_notice {
-                        Snackbar { message }
-                    }
-                    if let Some(message) = send_notice_message {
-                        Snackbar { message }
-                    }
-                    if let Some(message) = notice {
-                        Snackbar { message }
                     }
                     ShareSheet {
                         state: share.state(),
@@ -435,7 +425,7 @@ pub(super) fn Record(id: i64) -> Element {
                                 message,
                             }
                         }
-                        div { class: "home-confirmation-actions",
+                        div { class: "confirmation-actions",
                             Button {
                                 label: "Annuler".to_string(),
                                 variant: ButtonVariant::Text,
@@ -475,7 +465,7 @@ pub(super) fn Record(id: i64) -> Element {
                                 message,
                             }
                         }
-                        div { class: "home-confirmation-actions",
+                        div { class: "confirmation-actions",
                             Button {
                                 label: "Annuler".to_string(),
                                 variant: ButtonVariant::Text,
@@ -602,7 +592,7 @@ fn persist_prefilled_draft(
 /// Writes the pre-filled invoice (deep copy of the quote, dated today — the
 /// gérante adjusts it in the form) as the draft.
 fn persist_conversion(database: &DatabaseContext, quote: &Document) -> Result<(), String> {
-    let input = invoice_draft_from_quote(quote, &Utc::now().format("%Y-%m-%d").to_string());
+    let input = invoice_draft_from_quote(quote, &Local::now().format("%Y-%m-%d").to_string());
     persist_prefilled_draft(
         database,
         &input,
@@ -614,7 +604,8 @@ fn persist_conversion(database: &DatabaseContext, quote: &Document) -> Result<()
 /// Writes the duplicate (deep copy of the document re-dated today, without
 /// number or `source_quote_id` — no link kept with the original) as the draft.
 fn persist_duplication(database: &DatabaseContext, document: &Document) -> Result<(), String> {
-    let input = duplicate_draft_from_document(document, &Utc::now().format("%Y-%m-%d").to_string());
+    let input =
+        duplicate_draft_from_document(document, &Local::now().format("%Y-%m-%d").to_string());
     persist_prefilled_draft(
         database,
         &input,

@@ -58,6 +58,25 @@ impl LineInput {
     }
 }
 
+/// A line still being typed, as she left it: raw strings, because the quantity
+/// and the price are not numbers yet — « 12, » is a legitimate half-typed price
+/// that no `i64` can hold.
+///
+/// Carries what she wrote and nothing else. The armed-delete window and the
+/// validation messages are deliberately absent: the first is a 400 ms safety
+/// guard that must never come back armed after a restart, the second is
+/// recomputed from the values themselves.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LineDraft {
+    /// `None` while adding a line, `Some(index)` while editing one.
+    pub index: Option<usize>,
+    pub description: String,
+    pub quantity: String,
+    pub price: String,
+    pub group: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentInput {

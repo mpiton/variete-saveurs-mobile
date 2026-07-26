@@ -4,7 +4,8 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params, types::Type};
 
 use super::models::{
-    CatalogItem, ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineInput,
+    CatalogItem, ClientInput, ClientKind, Document, DocumentInput, DocumentKind, LineDraft,
+    LineInput,
 };
 use super::numbering::reserve_number;
 use super::validation::validate_document;
@@ -107,6 +108,16 @@ pub fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             id INTEGER PRIMARY KEY CHECK (id = 1),
             payload_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
+        );
+
+        -- The line she is in the middle of typing, which lives in a sheet and
+        -- was therefore never written anywhere: a WebView the system recycled
+        -- took it with it, while the rest of the draft survived. Its own table
+        -- rather than a column on `draft`, so the schema stays additive — every
+        -- migration here is a CREATE IF NOT EXISTS, and it stays that way.
+        CREATE TABLE IF NOT EXISTS draft_line_editor (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            payload_json TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS settings (
@@ -244,8 +255,49 @@ pub fn load_draft(connection: &Connection) -> rusqlite::Result<Option<DocumentIn
     }
 }
 
+/// Clears the draft *and* the line she was typing: the two are one piece of
+/// work, and an editor surviving its own draft would reopen over a blank form.
 pub fn clear_draft(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute("DELETE FROM draft WHERE id = 1", [])?;
+    clear_line_editor(connection)
+}
+
+pub fn save_line_editor(connection: &Connection, editor: &LineDraft) -> rusqlite::Result<()> {
+    let payload_json = serde_json::to_string(editor)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    connection.execute(
+        "INSERT INTO draft_line_editor (id, payload_json) VALUES (1, ?1)
+         ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json",
+        params![payload_json],
+    )?;
+    Ok(())
+}
+
+/// An unreadable payload is dropped rather than surfaced: the worst outcome is
+/// one lost half-typed line, and refusing to open the form over it would be
+/// worse than the loss.
+pub fn load_line_editor(connection: &Connection) -> rusqlite::Result<Option<LineDraft>> {
+    let Some(payload_json) = connection
+        .query_row(
+            "SELECT payload_json FROM draft_line_editor WHERE id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    match serde_json::from_str(&payload_json) {
+        Ok(editor) => Ok(Some(editor)),
+        Err(_) => {
+            eprintln!("Ignoring unreadable line editor payload");
+            Ok(None)
+        }
+    }
+}
+
+pub fn clear_line_editor(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute("DELETE FROM draft_line_editor WHERE id = 1", [])?;
     Ok(())
 }
 
@@ -330,9 +382,20 @@ pub fn issue_document(
     })
 }
 
+/// Issued documents, newest first, narrowed by kind and by client name.
+///
+/// She looks for « le devis de la mairie » — the client name is the handle she
+/// has, so it is the only thing `search` matches. The comparison runs through
+/// `normalize_client_search`, the same accent- and case-folding the form's
+/// autocomplete uses, so « eglise » finds « Église » on both screens.
+///
+/// Filtering in Rust rather than in SQL: SQLite's `LIKE` is ASCII-only for case
+/// folding and knows nothing about accents, and at this volume (a few documents
+/// a month) the whole history is a handful of rows.
 pub fn list_documents(
     connection: &Connection,
     filter: Option<&DocumentKind>,
+    search: Option<&str>,
 ) -> rusqlite::Result<Vec<Document>> {
     let query = format!(
         "{DOCUMENT_SELECT}
@@ -340,9 +403,36 @@ pub fn list_documents(
          ORDER BY d.created_at DESC, d.id DESC"
     );
     let mut statement = connection.prepare(&query)?;
-    statement
+    let documents = statement
         .query_map(params![filter.map(DocumentKind::as_str)], document_from_row)?
-        .collect()
+        .collect::<rusqlite::Result<Vec<Document>>>()?;
+
+    // Trimmed before normalising: the Android keyboard appends a space after an
+    // autocompletion, so « boulangerie » with a trailing space matched nothing
+    // at all. Whitespace alone is not a search either.
+    let Some(needle) = search
+        .map(str::trim)
+        .filter(|term| !term.is_empty())
+        .map(normalize_client_search)
+    else {
+        return Ok(documents);
+    };
+    Ok(documents
+        .into_iter()
+        .filter(|document| normalize_client_search(&document.input.client.name).contains(&needle))
+        .collect())
+}
+
+/// How many documents exist, all kinds and no search. Drives whether the home
+/// screen offers a search at all: below the threshold the list is short enough
+/// to read, and a permanent field would be one more thing on the screen the
+/// critique already found crowded.
+pub fn count_documents(connection: &Connection) -> rusqlite::Result<usize> {
+    connection
+        .query_row("SELECT COUNT(*) FROM documents", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map(|count| count.max(0) as usize)
 }
 
 pub fn get_document(connection: &Connection, id: i64) -> rusqlite::Result<Document> {
@@ -513,9 +603,10 @@ mod tests {
     use rusqlite::{Connection, params};
 
     use super::{
-        IssueError, clear_draft, get_document, insert_document, issue_document,
-        list_active_catalog_items, list_catalog, list_documents, load_draft, mark_sent, migrate,
-        open_database, save_draft, search_clients, seed_catalog, upsert_catalog_item,
+        IssueError, LineDraft, clear_draft, count_documents, get_document, insert_document,
+        issue_document, list_active_catalog_items, list_catalog, list_documents, load_draft,
+        load_line_editor, mark_sent, migrate, open_database, save_draft, save_line_editor,
+        search_clients, seed_catalog, upsert_catalog_item,
     };
     use crate::domain::convert::invoice_draft_from_quote;
     use crate::domain::models::{
@@ -620,6 +711,144 @@ mod tests {
         let input = document_input(DocumentKind::Quote, "Mairie de Lyon");
         save_draft(&connection, &input, "2026-07-22T10:00:00Z").expect("save draft");
         assert_eq!(load_draft(&connection).expect("load draft"), Some(input));
+    }
+
+    #[test]
+    fn the_search_matches_the_client_name_through_accents_and_case() {
+        let (_file, mut connection) = initialized_connection();
+        persist_document(
+            &mut connection,
+            10,
+            &document_input(DocumentKind::Quote, "Église Saint-Rémy"),
+            None,
+            "2026-07-22T10:00:00Z",
+        );
+        persist_document(
+            &mut connection,
+            11,
+            &document_input(DocumentKind::Quote, "Boulangerie Martin"),
+            None,
+            "2026-07-22T11:00:00Z",
+        );
+
+        // She types what she remembers, not what she typed six months ago.
+        for needle in ["eglise", "ÉGLISE", "  saint-rémy  "] {
+            let found = list_documents(&connection, None, Some(needle)).expect("search");
+            assert_eq!(found.len(), 1, "« {needle} » should find exactly one");
+            assert_eq!(found[0].input.client.name, "Église Saint-Rémy");
+        }
+
+        // A blank search is not a search.
+        assert_eq!(
+            list_documents(&connection, None, Some("   "))
+                .expect("blank search")
+                .len(),
+            2
+        );
+        assert_eq!(
+            list_documents(&connection, None, None)
+                .expect("no search")
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn the_search_and_the_filter_narrow_together() {
+        let (_file, mut connection) = initialized_connection();
+        let quote = document_input(DocumentKind::Quote, "Boulangerie Martin");
+        let quote_id = persist_document(&mut connection, 10, &quote, None, "2026-07-22T10:00:00Z");
+        let mut invoice = invoice_draft_from_quote(
+            &get_document(&connection, quote_id).expect("load quote"),
+            "2026-07-23",
+        );
+        invoice.client.name = "Boulangerie Martin".to_string();
+        persist_document(
+            &mut connection,
+            1,
+            &invoice,
+            Some(quote_id),
+            "2026-07-23T10:00:00Z",
+        );
+
+        let invoices = list_documents(
+            &connection,
+            Some(&DocumentKind::Invoice),
+            Some("boulangerie"),
+        )
+        .expect("search invoices");
+
+        assert_eq!(invoices.len(), 1);
+        assert_eq!(invoices[0].input.kind, DocumentKind::Invoice);
+    }
+
+    #[test]
+    fn counting_documents_ignores_filter_and_search() {
+        let (_file, mut connection) = initialized_connection();
+        assert_eq!(count_documents(&connection).expect("count empty"), 0);
+        persist_document(
+            &mut connection,
+            10,
+            &document_input(DocumentKind::Quote, "Mairie de Lyon"),
+            None,
+            "2026-07-22T10:00:00Z",
+        );
+        // Drives whether the home screen offers a search at all, so it must
+        // count the history, never what is currently displayed.
+        assert_eq!(count_documents(&connection).expect("count"), 1);
+    }
+
+    #[test]
+    fn the_line_being_typed_survives_as_raw_text() {
+        let (_file, connection) = initialized_connection();
+        // Half-typed on purpose: a price of « 12, » is what a restart has to
+        // give back, and no numeric column could hold it.
+        let editor = LineDraft {
+            index: Some(2),
+            description: "Pièce montée 60 choux".to_string(),
+            quantity: "3".to_string(),
+            price: "12,".to_string(),
+            group: "Sucré".to_string(),
+        };
+
+        save_line_editor(&connection, &editor).expect("save editor");
+
+        assert_eq!(
+            load_line_editor(&connection).expect("load editor"),
+            Some(editor)
+        );
+    }
+
+    #[test]
+    fn clearing_the_draft_takes_the_line_editor_with_it() {
+        let (_file, connection) = initialized_connection();
+        save_draft(
+            &connection,
+            &document_input(DocumentKind::Quote, "Mairie de Lyon"),
+            "2026-07-22T10:00:00Z",
+        )
+        .expect("save draft");
+        save_line_editor(&connection, &LineDraft::default()).expect("save editor");
+
+        clear_draft(&connection).expect("clear draft");
+
+        // An editor outliving its draft would reopen over a blank form.
+        assert_eq!(load_draft(&connection).expect("load draft"), None);
+        assert_eq!(load_line_editor(&connection).expect("load editor"), None);
+    }
+
+    #[test]
+    fn an_unreadable_line_editor_is_dropped_rather_than_raised() {
+        let (_file, connection) = initialized_connection();
+        connection
+            .execute(
+                "INSERT INTO draft_line_editor (id, payload_json) VALUES (1, ?1)",
+                params!["{ not json"],
+            )
+            .expect("write corrupt payload");
+
+        // Losing one half-typed line beats refusing to open the form.
+        assert_eq!(load_line_editor(&connection).expect("load editor"), None);
     }
 
     #[test]
@@ -862,6 +1091,7 @@ mod tests {
                 "counters",
                 "documents",
                 "draft",
+                "draft_line_editor",
                 "settings"
             ]
         );
@@ -1014,7 +1244,7 @@ mod tests {
             "2026-07-22T12:00:00Z",
         );
 
-        let all = list_documents(&connection, None).expect("list all documents");
+        let all = list_documents(&connection, None, None).expect("list all documents");
         assert_eq!(
             all.iter().map(|document| document.id).collect::<Vec<_>>(),
             [latest_quote_id, converted_id, invoice_id, quote_id]
@@ -1032,8 +1262,8 @@ mod tests {
                 .is_invoiced
         );
 
-        let quotes =
-            list_documents(&connection, Some(&DocumentKind::Quote)).expect("list quote documents");
+        let quotes = list_documents(&connection, Some(&DocumentKind::Quote), None)
+            .expect("list quote documents");
         assert_eq!(
             quotes
                 .iter()
@@ -1041,7 +1271,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [latest_quote_id, quote_id]
         );
-        let invoices = list_documents(&connection, Some(&DocumentKind::Invoice))
+        let invoices = list_documents(&connection, Some(&DocumentKind::Invoice), None)
             .expect("list invoice documents");
         assert_eq!(
             invoices

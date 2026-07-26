@@ -23,6 +23,7 @@ use crate::{
 
 use super::{
     catalog::Catalog,
+    components::ErrorBlock,
     compose::{Compose, SendNotice},
     form::Form,
     home::Home,
@@ -35,10 +36,10 @@ use super::{
 
 const APP_CSS: Asset = asset!("/assets/app.css");
 /// Painted before the stylesheet lands, so it carries both chromes itself —
-/// the light teal would flash on a phone set to the dark scheme.
+/// the light red would flash on a phone set to the dark scheme.
 const PRE_RENDER_STYLE: &str = concat!(
-    "html,body,#main{width:100%;height:100%;margin:0;background:#0F3F3A}",
-    "@media(prefers-color-scheme:dark){html,body,#main{background:#0C2B27}}",
+    "html,body,#main{width:100%;height:100%;margin:0;background:#6B1220}",
+    "@media(prefers-color-scheme:dark){html,body,#main{background:#4A0C16}}",
     // The splash, mirroring `app.css`: the overlay must cover the screen on the
     // very first paint, or the home screen shows through it unstyled for as
     // long as the stylesheet takes to arrive. The animations belong here for
@@ -46,8 +47,8 @@ const PRE_RENDER_STYLE: &str = concat!(
     // while `SPLASH_DURATION` counts from mount, so a stylesheet δ ms late
     // leaves the overlay at δ/240 opacity when Rust drops it. The values are
     // the stylesheet's, so it re-declaring them restarts nothing.
-    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#0F3F3A;animation:splash-out 240ms ease-in 2000ms both}",
-    "@media(prefers-color-scheme:dark){.splash{background:#0C2B27}}",
+    ".splash{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:#6B1220;animation:splash-out 240ms ease-in 2000ms both}",
+    "@media(prefers-color-scheme:dark){.splash{background:#4A0C16}}",
     ".splash__video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}",
     ".splash__logo{position:relative;width:min(46%,220px);animation:splash-logo-in 240ms cubic-bezier(0.165,0.84,0.44,1) 300ms both}",
     "@keyframes splash-out{to{opacity:0}}",
@@ -213,11 +214,14 @@ pub(super) enum Route {
 impl Route {
     const fn title(&self) -> &'static str {
         match self {
+            // CONTEXT.md owns this vocabulary. « Formulaire », « Fiche » and
+            // « Composition » were router words: they name the widget, not the
+            // thing she is looking at.
             Self::Home {} => "Accueil",
-            Self::Form {} => "Formulaire",
-            Self::Record { .. } => "Fiche",
+            Self::Form {} => "Brouillon",
+            Self::Record { .. } => "Document émis",
             Self::Preview { .. } => "Aperçu",
-            Self::Compose { .. } => "Composition",
+            Self::Compose { .. } => "Envoi par email",
             Self::Catalog {} => "Catalogue",
             Self::Settings {} => "Réglages",
         }
@@ -293,6 +297,14 @@ fn AppShell() -> Element {
     let history = use_context::<Rc<AppHistory>>();
     let mut menu_open = use_signal(|| false);
     let mut outside_interaction = use_context_provider(|| OutsideInteraction(Signal::new(0_u64)));
+
+    // Any tap or scroll outside dismisses the menu, like the form's client
+    // suggestions already do. The trigger and the panel stop their own taps
+    // from reaching the shell, so opening does not immediately close.
+    use_effect(move || {
+        let _ = outside_interaction.0();
+        menu_open.set(false);
+    });
     let mut debug_export_status = use_signal_sync(|| DebugExportStatus::Ready);
 
     use_future(move || {
@@ -375,22 +387,29 @@ fn AppShell() -> Element {
                     class: "icon-button",
                     r#type: "button",
                     aria_label: "Ouvrir le menu",
+                    // A disclosure, not an ARIA menu: the panel is a <nav> of
+                    // links, and `menu`/`menuitem` would promise arrow-key
+                    // roving that nothing here implements.
                     aria_controls: "app-menu",
                     aria_expanded: menu_open(),
-                    aria_haspopup: "menu",
-                    onclick: move |_| menu_open.toggle(),
+                    onclick: move |event: MouseEvent| {
+                        event.stop_propagation();
+                        menu_open.toggle();
+                    },
                     span { aria_hidden: "true", "⋮" }
                 }
                 if menu_open() {
-                    nav { id: "app-menu", class: "app-menu", aria_label: "Navigation secondaire",
+                    nav {
+                        id: "app-menu",
+                        class: "app-menu",
+                        aria_label: "Navigation secondaire",
+                        onclick: move |event: MouseEvent| event.stop_propagation(),
                         Link {
-                            role: "menuitem",
                             to: Route::Catalog {},
                             onclick: move |_| menu_open.set(false),
                             "Catalogue"
                         }
                         Link {
-                            role: "menuitem",
                             to: Route::Settings {},
                             onclick: move |_| menu_open.set(false),
                             "Réglages"
@@ -398,7 +417,6 @@ fn AppShell() -> Element {
                         if cfg!(debug_assertions) {
                             button {
                                 r#type: "button",
-                                role: "menuitem",
                                 disabled: debug_export_running,
                                 onclick: move |_| {
                                     if DEBUG_EXPORT_IN_PROGRESS.swap(true, AtomicOrdering::SeqCst) {
@@ -459,7 +477,12 @@ fn AppShell() -> Element {
             }
             main { class: "screen-scroll",
                 if let Some(error) = database_error {
-                    p { class: "startup-error", role: "alert", "{error}" }
+                    section { class: "screen",
+                        ErrorBlock {
+                            title: "Base de données inaccessible",
+                            message: "{error} Fermez puis rouvrez l’application. Si le message revient, ne la désinstallez pas : vos documents sont dans son stockage.",
+                        }
+                    }
                 }
                 Outlet::<Route> {}
             }
@@ -523,15 +546,21 @@ mod tests {
     fn routes_have_stable_paths_and_french_titles() {
         let routes = [
             (Route::Home {}, "/", "Accueil"),
-            (Route::Form {}, "/formulaire", "Formulaire"),
-            (Route::Record { id: 42 }, "/fiche/42", "Fiche"),
+            // Paths are frozen (they are history entries); the titles follow
+            // CONTEXT.md instead of the router.
+            (Route::Form {}, "/formulaire", "Brouillon"),
+            (Route::Record { id: 42 }, "/fiche/42", "Document émis"),
             (Route::Preview { document: None }, "/apercu?", "Aperçu"),
             (
                 Route::Preview { document: Some(42) },
                 "/apercu?document=42",
                 "Aperçu",
             ),
-            (Route::Compose { id: 42 }, "/composition/42", "Composition"),
+            (
+                Route::Compose { id: 42 },
+                "/composition/42",
+                "Envoi par email",
+            ),
             (Route::Catalog {}, "/catalogue", "Catalogue"),
             (Route::Settings {}, "/reglages", "Réglages"),
         ];
