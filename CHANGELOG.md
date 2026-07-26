@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- « Afficher la clé » under the Brevo key field in Réglages. The key is a long
+  opaque string typed into a `password` input, so a typo left no trace until an
+  email was refused — discovered from the compose screen, after writing the
+  message, with a client waiting, and worded so it didn't say whether the key,
+  the sender address or the recipient was at fault. The toggle only ever
+  applies to the candidate being typed: `new_api_key` is never filled from the
+  store, the stored key still shows as « configurée » and nothing reveals it.
+  Saving clears the candidate and the reveal together, so a shown field can't
+  outlive its own save. Revealed, the field is plain `text`, which hands back
+  the text-assistance surfaces `password` suppressed for free — so it also
+  carries `spellcheck="false"` and `writingsuggestions="false"`, keeping the
+  key out of IME learning and browser suggestion UIs.
+
 ### Changed
 
 - The record screen no longer offers six flat actions. Its chrome bar took 422

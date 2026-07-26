@@ -1493,6 +1493,12 @@ input[aria-busy="true"]:disabled {
     gap: var(--space-sm);
 }
 
+/* The reveal toggle sits under its field, sized to its label — the grid row
+   would otherwise stretch it to the width of a primary action. */
+.settings-key-reveal {
+    justify-self: start;
+}
+
 /* Specificity must beat `.screen p` (0,1,1), which sets a muted color. */
 .settings-screen .settings-key-status__label {
     color: var(--color-ink);

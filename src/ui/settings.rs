@@ -1,8 +1,11 @@
 //! Settings screen (DESIGN.md §5): the one-time Brevo email configuration —
 //! API key, sender address and name (ARCHI.md §3 `settings`, ADR 0002). The
 //! key is write-only: once stored it shows as « configurée » and is never
-//! displayed again; typing a new one replaces it. Without configuration the
-//! app keeps working — only email sending stays gated off (task 25).
+//! displayed again; typing a new one replaces it. It can be revealed while
+//! being typed, and only then (issue 34) — a Brevo key is long and opaque, and
+//! without that the first sign of a typo is a refused send in front of a
+//! client. Without configuration the app keeps working — only email sending
+//! stays gated off (task 25).
 
 use std::time::Duration;
 
@@ -31,9 +34,27 @@ struct SettingsForm {
     new_api_key: String,
     /// Whether the stored key (if any) is being replaced.
     editing_key: bool,
+    /// Whether the candidate being typed is shown in clear text.
+    reveal_key: bool,
     key_error: Option<String>,
     email_error: Option<String>,
     save_error: Option<String>,
+}
+
+impl SettingsForm {
+    /// Drop the candidate and both of its affordances once it has been stored:
+    /// a revealed field must not survive its own save.
+    fn clear_key_entry(&mut self) {
+        self.new_api_key.clear();
+        self.editing_key = false;
+        self.reveal_key = false;
+    }
+}
+
+/// Revealing only ever exposes the candidate: `new_api_key` is never filled
+/// from the store, so the saved key has no path back to the screen.
+const fn key_input_type(reveal: bool) -> &'static str {
+    if reveal { "text" } else { "password" }
 }
 
 #[component]
@@ -125,10 +146,15 @@ pub(super) fn Settings() -> Element {
                             "Clé API Brevo".to_string()
                         },
                         name: "brevo-api-key".to_string(),
-                        input_type: "password".to_string(),
+                        input_type: key_input_type(state.reveal_key).to_string(),
                         // Keep the Android autofill framework away from the
                         // key: it must never leave the app-private store.
                         autocomplete: "off".to_string(),
+                        // Revealed, the field is a plain `text` input, which
+                        // hands back every text-assistance surface `password`
+                        // suppressed — the same stores the line above keeps
+                        // the key out of.
+                        sensitive: true,
                         placeholder: if key_saved() {
                             "Laisser vide pour conserver la clé actuelle".to_string()
                         } else {
@@ -141,6 +167,20 @@ pub(super) fn Settings() -> Element {
                             form.new_api_key = event.value();
                             form.key_error = None;
                         },
+                    }
+                    div { class: "settings-key-reveal",
+                        Button {
+                            label: if state.reveal_key {
+                                "Masquer la clé".to_string()
+                            } else {
+                                "Afficher la clé".to_string()
+                            },
+                            variant: ButtonVariant::Text,
+                            onclick: move |_| {
+                                let mut form = form.write();
+                                form.reveal_key = !form.reveal_key;
+                            },
+                        }
                     }
                 } else {
                     div { class: "settings-key-status",
@@ -218,8 +258,7 @@ fn save_settings(
             if new_key.is_some() {
                 key_saved.set(true);
             }
-            state.new_api_key.clear();
-            state.editing_key = false;
+            state.clear_key_entry();
             form.set(state);
             notice.set(Some("Réglages enregistrés.".to_string()));
         }
@@ -257,4 +296,31 @@ fn persist_settings(
         eprintln!("Settings save failed: {error}");
         "Impossible d’enregistrer les réglages.".to_string()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SettingsForm, key_input_type};
+
+    #[test]
+    fn the_key_field_hides_its_content_until_asked() {
+        assert_eq!(key_input_type(false), "password");
+        assert_eq!(key_input_type(true), "text");
+    }
+
+    #[test]
+    fn a_stored_key_leaves_no_revealed_candidate_on_screen() {
+        let mut form = SettingsForm {
+            new_api_key: "xkeysib-candidate".to_string(),
+            editing_key: true,
+            reveal_key: true,
+            ..SettingsForm::default()
+        };
+
+        form.clear_key_entry();
+
+        assert!(form.new_api_key.is_empty());
+        assert!(!form.editing_key);
+        assert!(!form.reveal_key);
+    }
 }
