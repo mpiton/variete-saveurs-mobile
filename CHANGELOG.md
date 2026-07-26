@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The release process in `CLAUDE.md` now describes the sequence that actually
+  produces the APK we ship. Step 5 claimed `dx build --platform android
+  --release --device` emitted one signed with the keystore. It does not: dx
+  compiles the Rust side in release but assembles the *debug* Gradle variant, so
+  the APK comes out `android:debuggable="true"` and signed with
+  `~/.android/debug.keystore` — and debuggable means `adb run-as` reads the app's
+  private storage, which holds her accounting and the Brevo key. The release
+  variant only comes from `gradlew assembleRelease` on the project dx generates;
+  `zipalign` and `apksigner` follow, reading the password from a file outside
+  the repo rather than from `Dioxus.toml`'s `[android.signing]`, which would
+  want it committed in clear. Written down while cutting v0.1.0, which is
+  therefore built that way. The `versionCode` rule is now marked as what it is —
+  unmet, dx bakes it to 1 with no key to change it (ADR 0004).
+
 ## [0.1.0] - 2026-07-26
 
 Première version installée sur le téléphone de la gérante. Elle rédige un devis,
