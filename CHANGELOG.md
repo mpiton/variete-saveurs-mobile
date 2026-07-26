@@ -100,6 +100,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Back left the screen instead of closing an open bottom sheet, losing the line
+  being edited, the catalogue picks or the confirmation about to be answered.
+  The sheets are `<dialog>` elements with an `oncancel` handler, but the Android
+  callback was registered as always-enabled and called `goBack()` straight away,
+  so the WebView never saw the key. Back now cancels the topmost open sheet
+  first — through the component's own handler, which still refuses to dismiss a
+  sheet whose job is running — and only moves in history when there is none.
+  Verified on device: sheet closes, screen stays; back again returns to the
+  list; back at the root leaves the app. No Rust test covers this: the logic is
+  Kotlin, which is why it survived until a phone was plugged in.
+
 - A disabled `textarea` looked exactly like an active one: the 38 % opacity rule
   listed `button` and `input` only, so the email body dimmed nothing but its
   floating label. `textarea` and `summary` were also keeping the UA's grey tap

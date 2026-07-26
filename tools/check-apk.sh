@@ -25,7 +25,18 @@ set -euo pipefail
 PROFILE="${PROFILE:-release}"
 APK="${1:-target/dx/devis-mobile/$PROFILE/android/app/app/build/outputs/apk/$PROFILE/app-$PROFILE.apk}"
 ABI="${2:-arm64-v8a}"
-MANIFEST="$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$APK")")")")")/../.manifest.json"
+# Walked up to rather than counted out: a hard-coded number of `dirname` calls
+# was off by one, and the `[ -f ]` that followed skipped the check in silence —
+# which is the exact failure mode this script exists to catch.
+find_manifest() {
+    local dir
+    dir=$(cd "$(dirname "$1")" && pwd)
+    while [ "$dir" != / ]; do
+        [ -f "$dir/.manifest.json" ] && { printf '%s' "$dir/.manifest.json"; return 0; }
+        dir=$(dirname "$dir")
+    done
+    return 1
+}
 
 fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; exit 1; }
 pass() { printf '\033[32m✓\033[0m %s\n' "$1"; }
@@ -58,17 +69,15 @@ bundled=$(unzip -l "$APK" | grep -oE 'assets/app-dxh[a-f0-9]+\.css' | sed 's|ass
 pass "le binaire sert la feuille embarquée ($referenced)"
 
 # --- and that asset is the file on disk right now ------------------------
-if [ -f "$MANIFEST" ]; then
-    expected=$(python3 -c "
-import json, os, sys
+MANIFEST=$(find_manifest "$APK") || fail "aucun .manifest.json au-dessus de l'APK — impossible de vérifier la feuille servie contre le disque"
+
+expected=$(python3 -c "
+import json, os
 m = json.load(open('$MANIFEST'))
-css = os.path.abspath('assets/app.css')
-print(m['assets'][css][0]['bundled_path'])
-" 2>/dev/null || true)
-    if [ -n "$expected" ]; then
-        [ "$referenced" = "$expected" ] || fail "assets/app.css devrait donner « $expected », l'APK sert « $referenced ». Lancez : rm -rf target/dx"
-        pass "la feuille servie est bien assets/app.css tel qu'il est sur le disque"
-    fi
-fi
+print(m['assets'][os.path.abspath('assets/app.css')][0]['bundled_path'])
+") || fail "assets/app.css absent de $MANIFEST"
+
+[ "$referenced" = "$expected" ] || fail "assets/app.css devrait donner « $expected », l'APK sert « $referenced ». Lancez : rm -rf target/dx"
+pass "la feuille servie est bien assets/app.css tel qu'il est sur le disque"
 
 printf '\n\033[32mAPK conforme.\033[0m %s\n' "$APK"
