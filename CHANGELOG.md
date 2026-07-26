@@ -119,6 +119,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The system navigation icons were dark on the red action bar in the light
+  scheme — 1,7:1, on the four screens out of seven whose chrome reaches the
+  bottom edge. Kotlin derived their appearance from `uiMode` alone, and it has
+  no way of knowing which screen the WebView is showing, so no value was right
+  everywhere: light icons would have been invisible on the cream of the three
+  screens without an action bar. The band is chrome on all seven instead — the
+  three others paint the inset they already reserved rather than leaving it in
+  content colour — and the icons are white everywhere, at 12,12:1. The bottom
+  sheet paints it too: it is in the top layer, so it covers that band over any
+  screen at all, and its elevated white would have taken the icons to 1:1. Above
+  the keyboard the band belongs to the IME, which paints it and sets its own
+  icons, so nothing is reserved there. No page-to-Kotlin channel to keep in
+  sync, and the red frames the cream top and bottom.
+
 - The line being typed is persisted with the draft. It lived in a sheet, so it
   existed only in memory: a WebView the system recycled took it with it while
   the rest of the draft survived, and « Pièce montée 60 choux / 3 / 450,00 € »

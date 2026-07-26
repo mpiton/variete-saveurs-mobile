@@ -107,7 +107,6 @@ class MainActivity : WryActivity() {
         // does not follow the new configuration by itself, so repaint it here.
         val chrome = chromeColor(newConfig)
         window.setBackgroundDrawable(ColorDrawable(chrome))
-        applySystemBarAppearance(newConfig)
         if (::webView.isInitialized) {
             webView.setBackgroundColor(chrome)
             webView.settings.textZoom = (newConfig.fontScale * 100).roundToInt()
@@ -120,14 +119,15 @@ class MainActivity : WryActivity() {
     private fun chromeColor(config: Configuration = resources.configuration): Int =
         if (isNightMode(config)) CHROME_COLOR_DARK else CHROME_COLOR_LIGHT
 
-    private fun applySystemBarAppearance(config: Configuration = resources.configuration) {
+    private fun applySystemBarAppearance() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            // The status bar always sits on the red chrome.
+            // Both bands are red chrome, in either scheme: the top app bar
+            // under the status bar, and under the navigation bar either the
+            // action bar or, on the screens without one, the chrome edge the
+            // scroll container paints there. So both keep light icons —
+            // 12,12:1 on #6B1220, where dark ones would be 1,7:1.
             isAppearanceLightStatusBars = false
-            // The navigation bar sits on the content background on most
-            // screens; the form and the preview end on the red action bar,
-            // where dark icons are wrong — but only in the light scheme.
-            isAppearanceLightNavigationBars = !isNightMode(config)
+            isAppearanceLightNavigationBars = false
         }
     }
 
