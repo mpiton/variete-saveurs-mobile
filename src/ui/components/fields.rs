@@ -10,7 +10,12 @@ pub fn OutlinedField(
     #[props(default = "text".to_string())] input_type: String,
     #[props(default)] input_mode: Option<String>,
     #[props(default)] autocomplete: Option<String>,
-    #[props(default)] spellcheck: Option<String>,
+    /// Keeps the value out of the text-assistance surfaces that `password`
+    /// suppresses for free: the IME's suggestion strip and its personalised
+    /// learning, and the browser's own writing suggestions. A field holding a
+    /// secret has to ask for them once it can be revealed as plain `text`.
+    #[props(default)]
+    sensitive: bool,
     #[props(default)] placeholder: String,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
@@ -32,7 +37,11 @@ pub fn OutlinedField(
                 r#type: input_type,
                 inputmode: input_mode,
                 autocomplete,
-                spellcheck,
+                // Chromium maps these to TYPE_TEXT_FLAG_NO_SUGGESTIONS and to
+                // its own suggestion UI respectively; both are inert when the
+                // field is a `password`.
+                spellcheck: sensitive.then_some("false"),
+                "writingsuggestions": sensitive.then_some("false"),
                 value,
                 placeholder,
                 disabled: disabled || loading,

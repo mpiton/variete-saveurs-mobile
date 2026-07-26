@@ -17,7 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applies to the candidate being typed: `new_api_key` is never filled from the
   store, the stored key still shows as « configurée » and nothing reveals it.
   Saving clears the candidate and the reveal together, so a shown field can't
-  outlive its own save.
+  outlive its own save. Revealed, the field is plain `text`, which hands back
+  the text-assistance surfaces `password` suppressed for free — so it also
+  carries `spellcheck="false"` and `writingsuggestions="false"`, keeping the
+  key out of IME learning and browser suggestion UIs.
 
 ### Changed
 

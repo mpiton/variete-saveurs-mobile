@@ -151,11 +151,10 @@ pub(super) fn Settings() -> Element {
                         // key: it must never leave the app-private store.
                         autocomplete: "off".to_string(),
                         // Revealed, the field is a plain `text` input, which
-                        // hands the IME back its suggestion strip and its
-                        // personalised learning — the same store the line
-                        // above keeps the key out of. Chromium maps this to
-                        // TYPE_TEXT_FLAG_NO_SUGGESTIONS.
-                        spellcheck: "false".to_string(),
+                        // hands back every text-assistance surface `password`
+                        // suppressed — the same stores the line above keeps
+                        // the key out of.
+                        sensitive: true,
                         placeholder: if key_saved() {
                             "Laisser vide pour conserver la clé actuelle".to_string()
                         } else {
