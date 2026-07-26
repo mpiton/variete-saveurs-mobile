@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-26
+
+Première version installée sur le téléphone de la gérante. Elle rédige un devis,
+l'émet, l'exporte en PDF et en PNG fidèles au template desktop, le partage ou
+l'envoie par email, et le convertit en facture — hors ligne, sans compte.
+
 ### Added
 
 - Réglages can now update the app itself (ADR 0004). The APK ships direct, never
