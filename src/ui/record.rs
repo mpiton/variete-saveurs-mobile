@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{Local, Utc};
 use dioxus::prelude::*;
 use rusqlite::Connection;
 use tokio::time::sleep;
@@ -592,7 +592,7 @@ fn persist_prefilled_draft(
 /// Writes the pre-filled invoice (deep copy of the quote, dated today — the
 /// gérante adjusts it in the form) as the draft.
 fn persist_conversion(database: &DatabaseContext, quote: &Document) -> Result<(), String> {
-    let input = invoice_draft_from_quote(quote, &Utc::now().format("%Y-%m-%d").to_string());
+    let input = invoice_draft_from_quote(quote, &Local::now().format("%Y-%m-%d").to_string());
     persist_prefilled_draft(
         database,
         &input,
@@ -604,7 +604,8 @@ fn persist_conversion(database: &DatabaseContext, quote: &Document) -> Result<()
 /// Writes the duplicate (deep copy of the document re-dated today, without
 /// number or `source_quote_id` — no link kept with the original) as the draft.
 fn persist_duplication(database: &DatabaseContext, document: &Document) -> Result<(), String> {
-    let input = duplicate_draft_from_document(document, &Utc::now().format("%Y-%m-%d").to_string());
+    let input =
+        duplicate_draft_from_document(document, &Local::now().format("%Y-%m-%d").to_string());
     persist_prefilled_draft(
         database,
         &input,

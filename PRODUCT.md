@@ -22,7 +22,7 @@ Succès : elle traite sa paperasse le soir depuis son téléphone, en quelques m
 
 Ce qu'un outil de facturation voisin ne peut pas revendiquer honnêtement :
 
-- **100 % local.** SQLite dans le stockage privé de l'app, aucun backend, aucun compte, aucun abonnement, un seul endpoint sortant (Brevo, pour l'envoi email). Sa comptabilité ne quitte pas son téléphone.
+- **Local d'abord.** SQLite dans le stockage privé de l'app, aucun backend, aucun compte, aucun abonnement, aucune synchronisation, aucune télémétrie. **Une seule exception, explicite** : quand elle choisit d'envoyer un document par email, le PDF ou le PNG part chez Brevo, avec une copie en BCC à son adresse professionnelle (`ARCHI.md §4`) — c'est le geste d'envoi qui fait sortir la donnée, jamais l'app d'elle-même. Rien d'autre ne quitte le téléphone : le partage Android reste local à l'appareil, et sa base n'est jamais transmise.
 - **Le document n'est pas un template paramétré.** C'est le gabarit exact de sa marque (`templates/document.css` + `templates/logo.png`), repris à l'identique de l'app desktop, pas un thème choisi dans une liste.
 - **Continuité comptable.** L'app reprend la numérotation là où le desktop s'est arrêté (devis n° 10, facture n° 1) : pas de remise à zéro, pas de rupture dans les archives.
 - **Micro-entreprise assumée.** Pas de TVA (art. 293 B du CGI), mention portée par le document — un défaut du produit, pas une case à décocher.

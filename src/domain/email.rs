@@ -157,13 +157,46 @@ pub fn render_email_html(kind: &DocumentKind, values: &EmailPlaceholders, messag
         _ => String::new(),
     };
 
-    // Substitution runs from least to most user-controlled, and inserted values
-    // are never re-scanned: a client named « {message} » stays literal text
-    // instead of being expanded by a later replacement.
-    TEMPLATE
-        .replace("{validity_paragraph}", &validity_paragraph)
-        .replace("{client_name}", &encode_text(&values.client_name))
-        .replace("{message}", &message_html(message))
+    // One pass, because chained `replace` calls are not one: each of them
+    // re-scans what the previous ones inserted, so a client named « {message} »
+    // was substituted into the greeting and then expanded by the next call,
+    // dropping the whole message block onto the « Bonjour » line. Escaping does
+    // not help — `encode_text` escapes HTML, not braces.
+    fill(
+        TEMPLATE,
+        &[
+            ("{validity_paragraph}", &validity_paragraph),
+            ("{client_name}", &encode_text(&values.client_name)),
+            ("{message}", &message_html(message)),
+        ],
+    )
+}
+
+/// Substitutes every placeholder in a single left-to-right pass: what a value
+/// carries lands in the output and is never looked at again.
+fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(brace) = rest.find('{') {
+        out.push_str(&rest[..brace]);
+        rest = &rest[brace..];
+        match values
+            .iter()
+            .find_map(|(token, value)| rest.strip_prefix(token).map(|tail| (*value, tail)))
+        {
+            Some((value, tail)) => {
+                out.push_str(value);
+                rest = tail;
+            }
+            // An unknown `{` is literal text — the template owns its tokens.
+            None => {
+                out.push('{');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 fn message_html(message: &str) -> String {
@@ -290,13 +323,19 @@ mod tests {
 
     #[test]
     fn client_name_cannot_retrigger_placeholder_substitution() {
+        // `{message}` on purpose: it is a *live* token substituted after the
+        // client name. The previous version of this test used `{total}`, which
+        // stopped being a token when the body moved to plain text, so it passed
+        // no matter what the substitution did.
         let values = EmailPlaceholders {
-            client_name: "{total}".to_string(),
+            client_name: "{message}".to_string(),
             ..quote_values()
         };
-        let body = rendered(&DocumentKind::Quote, &values);
+        let body = render_email_html(&DocumentKind::Quote, &values, "Le corps du message.");
 
-        assert!(body.contains("Bonjour {total},"));
+        assert!(body.contains("Bonjour {message},"));
+        // And the real message still landed exactly once, where it belongs.
+        assert_eq!(body.matches("Le corps du message.").count(), 1);
     }
 
     #[test]

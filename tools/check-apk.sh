@@ -44,7 +44,12 @@ pass() { printf '\033[32m✓\033[0m %s\n' "$1"; }
 [ -f "$APK" ] || fail "APK introuvable : $APK"
 
 # --- one ABI, and it is the one we target --------------------------------
-libs=$(unzip -l "$APK" | grep -oE 'lib/[^/]+/libmain\.so' | sort -u)
+# `|| true` on every grep: under `set -e` a no-match aborts the script mid-way,
+# so the `fail` message below would never print — a guard that dies quietly is
+# the exact thing this file exists to prevent.
+libs=$(unzip -l "$APK" | grep -oE 'lib/[^/]+/libmain\.so' | sort -u || true)
+[ -n "$libs" ] || fail "aucun binaire natif dans l'APK — build incomplet"
+
 count=$(printf '%s\n' "$libs" | grep -c . || true)
 if [ "$count" -ne 1 ]; then
     printf '%s\n' "$libs" >&2
@@ -58,11 +63,13 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 unzip -o -q "$APK" "lib/$ABI/libmain.so" -d "$work"
 
-referenced=$(strings -a "$work/lib/$ABI/libmain.so" | grep -oE 'app-dxh[a-f0-9]+\.css' | sort -u)
+referenced=$(strings -a "$work/lib/$ABI/libmain.so" | grep -oE 'app-dxh[a-f0-9]+\.css' | sort -u || true)
 [ -n "$referenced" ] || fail "aucune référence de feuille de style dans le binaire"
 [ "$(printf '%s\n' "$referenced" | wc -l)" -eq 1 ] || fail "le binaire référence plusieurs feuilles : $referenced"
 
-bundled=$(unzip -l "$APK" | grep -oE 'assets/app-dxh[a-f0-9]+\.css' | sed 's|assets/||' | sort -u)
+bundled=$(unzip -l "$APK" | grep -oE 'assets/app-dxh[a-f0-9]+\.css' | sed 's|assets/||' | sort -u || true)
+[ -n "$bundled" ] || fail "aucune feuille de style dans l'APK"
+
 [ "$(printf '%s\n' "$bundled" | wc -l)" -eq 1 ] || fail "$(printf '%s\n' "$bundled" | wc -l) feuilles de style dans l'APK — restes de builds précédents. Lancez : rm -rf target/dx"
 
 [ "$referenced" = "$bundled" ] || fail "le binaire sert « $referenced » alors que l'APK embarque « $bundled ». Lancez : rm -rf target/dx"

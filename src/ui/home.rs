@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
-use chrono::Utc;
+use chrono::{Local, Utc};
 use dioxus::prelude::*;
 
 use crate::domain::{
@@ -444,8 +444,11 @@ fn persist_new_draft(database: &DatabaseContext, kind: DocumentKind) -> Result<(
     let connection = database
         .lock()
         .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    // The issue date is the day *she* is living, not the day in UTC: she works
+    // in the evening, and between midnight and 02:00 in summer UTC is still
+    // yesterday — the document would carry the wrong date, frozen.
     let now = Utc::now();
-    let draft = blank_draft(kind, &now.format("%Y-%m-%d").to_string());
+    let draft = blank_draft(kind, &Local::now().format("%Y-%m-%d").to_string());
     save_draft(&connection, &draft, &now.to_rfc3339()).map_err(|error| {
         eprintln!("Draft creation failed: {error}");
         "Impossible de créer le brouillon.".to_string()
