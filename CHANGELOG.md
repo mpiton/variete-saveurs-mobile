@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Brevo key can be pasted. The field opened as a `password` input, and OEM
+  keyboards answer that with a « clavier sécurisé » that disables the clipboard
+  — on a Realme there was no way in but typing a Brevo key out by hand, which
+  nobody is going to do, and getting one character wrong costs an envoi that
+  fails with no clue why. The field now opens revealed; « Masquer la clé » is
+  still one tap away. Masking bought nothing anyway: `spellcheck="false"` and
+  `writingsuggestions="false"` already keep the key out of the IME's suggestion
+  strip, its personalised learning and the browser's own suggestions, and the
+  autofill framework is refused separately. What is left is a shoulder to hide
+  from, and she enters this alone, once.
+
 ## [0.1.1] - 2026-07-26
 
 ### Changed
