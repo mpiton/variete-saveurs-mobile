@@ -56,6 +56,9 @@ class MainActivity : WryActivity() {
         this.webView = webView
         webView.setBackgroundColor(chromeColor())
         webView.settings.textZoom = (resources.configuration.fontScale * 100).roundToInt()
+        // The splash video is muted, bundled and started from script; the
+        // WebView default would still gate it behind a tap (DESIGN §8).
+        webView.settings.mediaPlaybackRequiresUserGesture = false
         // evaluateJavascript is a silent no-op until a page is loaded, and the
         // first insets dispatch usually lands before that: replay the cached
         // insets a few times after attach. Later real dispatches (rotation,

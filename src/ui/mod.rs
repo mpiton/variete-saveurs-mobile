@@ -12,5 +12,6 @@ mod preview;
 mod record;
 mod settings;
 mod share;
+mod splash;
 
 pub use app::app;

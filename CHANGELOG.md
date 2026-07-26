@@ -16,6 +16,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Animated splash (DESIGN §8, task 31): the bundled `splash-loop.mp4`
+  plays muted and looping under the real logo, which fades and scales in
+  over 240 ms on an ease-out-quart curve after a 300 ms hold, then the
+  overlay fades out at 2 s — 2.24 s in total, inside the 2.5 s budget.
+  The backdrop is the `--color-chrome` token the top app bar already
+  uses, which is what shows if the video cannot be decoded; nothing
+  waits on the app, since the database opens before the first paint.
+  Playback is started from script rather than an `autoplay`
+  attribute, so under `prefers-reduced-motion: reduce` the loop is
+  stopped on its first frame and the logo is left un-animated. It is
+  stopped rather than never started because a `<video>` the WebView has
+  no decoded frame for paints its own grey play button over the overlay;
+  for the same reason the element stays transparent until `loadeddata`.
+  The overlay rules are repeated in the inline pre-render style, since
+  the stylesheet is a linked asset and until it arrives the overlay would
+  not cover the home screen. The animations are repeated for a second
+  reason: their clock starts when the rule reaches the element, while the
+  Rust dismissal counts from mount, so a stylesheet arriving late enough
+  left the overlay part-way through its fade when the overlay was
+  dropped. The logo reuses the PNG `domain::render`
+  already embeds instead of shipping a second copy, so the video is the
+  only thing the splash adds to the APK (+1.17 MiB).
+  `MainActivity` turns off `mediaPlaybackRequiresUserGesture`, without
+  which the WebView gates even muted playback behind a tap.
+
 - Dark scheme (DESIGN §2, task 30): the app follows the system setting
   through `prefers-color-scheme`. The eight `dark-*` tokens of the DESIGN
   frontmatter are applied as specified; `surface-dim`, `label`,
