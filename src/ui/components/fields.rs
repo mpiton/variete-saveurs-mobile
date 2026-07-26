@@ -83,7 +83,7 @@ pub fn OutlinedTextArea(
 
     rsx! {
         div {
-            class: "outlined-field outlined-field--multiline",
+            class: "outlined-field",
             textarea {
                 id: input_id.clone(),
                 name,

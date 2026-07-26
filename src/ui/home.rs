@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
 use chrono::Utc;
 use dioxus::prelude::*;
 
@@ -5,16 +7,22 @@ use crate::domain::{
     db::{list_documents, load_draft, save_draft},
     models::{ClientInput, ClientKind, Document, DocumentInput, DocumentKind},
     money::format_eur,
+    render::format_date,
     settings::{dismiss_email_setup, email_setup_dismissed, load_email_settings},
 };
 
 use super::{
-    app::{DatabaseContext, Route},
+    app::{DatabaseContext, OutsideInteraction, Route},
     components::{
         BottomSheet, Button, ButtonVariant, DocumentCard, EmptyState, ErrorBlock, FabMenu,
         SegmentedButton,
     },
 };
+
+/// The filter outlives the screen. She narrows to « Factures », opens one,
+/// comes back — and used to land on « Tous » again, every time. Session-scoped
+/// on purpose: a cold start opens on everything.
+static LAST_FILTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum HomeFilter {
@@ -58,8 +66,20 @@ struct HomeData {
 pub(super) fn Home() -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
-    let mut filter = use_signal(HomeFilter::default);
+    let mut filter = use_signal(|| {
+        HomeFilter::ALL
+            .get(LAST_FILTER.load(AtomicOrdering::Relaxed))
+            .copied()
+            .unwrap_or_default()
+    });
     let mut fab_open = use_signal(|| false);
+    // Same dismissal contract as the app menu: a tap or a scroll anywhere else
+    // closes it, so the thumb is never trapped by a transient affordance.
+    let outside_interaction = use_context::<OutsideInteraction>().0;
+    use_effect(move || {
+        let _ = outside_interaction();
+        fab_open.set(false);
+    });
     let mut pending_kind = use_signal(|| None::<DocumentKind>);
     let mut action_error = use_signal(|| None::<String>);
     let reload = use_signal(|| 0_u64);
@@ -105,6 +125,7 @@ pub(super) fn Home() -> Element {
                         selected: filter().index(),
                         on_select: move |index| {
                             if let Some(selected) = HomeFilter::ALL.get(index).copied() {
+                                LAST_FILTER.store(index, AtomicOrdering::Relaxed);
                                 filter.set(selected);
                             }
                         },
@@ -170,6 +191,7 @@ pub(super) fn Home() -> Element {
                                     number: document.number,
                                     client: document.input.client.name.clone(),
                                     total: format_eur(document.total_cents),
+                                    issue_date: format_date(&document.input.issue_date),
                                     sent: document.is_sent(),
                                     invoiced: document.is_invoiced,
                                     onclick: {
@@ -187,7 +209,12 @@ pub(super) fn Home() -> Element {
                         FabMenu {
                             id: "home-create-menu",
                             open: fab_open(),
-                            on_toggle: move |_| fab_open.toggle(),
+                            // Stops the shell from reading its own trigger as an
+                            // outside tap and closing the menu on open.
+                            on_toggle: move |event: MouseEvent| {
+                                event.stop_propagation();
+                                fab_open.toggle();
+                            },
                             on_quote: {
                                 let database = database.clone();
                                 move |_| {
@@ -232,7 +259,7 @@ pub(super) fn Home() -> Element {
                         if let Some(error) = action_error_message.clone() {
                             ErrorBlock { title: "Remplacement impossible", message: error }
                         }
-                        div { class: "home-confirmation-actions",
+                        div { class: "confirmation-actions",
                             Button {
                                 label: "Annuler",
                                 variant: ButtonVariant::Text,
@@ -349,16 +376,23 @@ fn persist_new_draft(database: &DatabaseContext, kind: DocumentKind) -> Result<(
     let connection = database
         .lock()
         .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
-    save_draft(&connection, &blank_draft(kind), &Utc::now().to_rfc3339()).map_err(|error| {
+    let now = Utc::now();
+    let draft = blank_draft(kind, &now.format("%Y-%m-%d").to_string());
+    save_draft(&connection, &draft, &now.to_rfc3339()).map_err(|error| {
         eprintln!("Draft creation failed: {error}");
         "Impossible de créer le brouillon.".to_string()
     })
 }
 
-fn blank_draft(kind: DocumentKind) -> DocumentInput {
+/// Dated by the caller, like a conversion or a duplication already are: the
+/// issue date is the day she writes it, not a mandatory field to retype for
+/// every document of the evening. The event date stays empty — that one is a
+/// real choice, and a plausible wrong default would ship inside a document she
+/// can no longer amend.
+fn blank_draft(kind: DocumentKind, issue_date: &str) -> DocumentInput {
     DocumentInput {
         kind,
-        issue_date: String::new(),
+        issue_date: issue_date.to_string(),
         event_date: String::new(),
         payment_terms: String::new(),
         client: ClientInput {
@@ -432,12 +466,15 @@ mod tests {
     }
 
     #[test]
-    fn a_new_draft_is_empty_and_keeps_the_selected_kind() {
+    fn a_new_draft_is_dated_today_and_keeps_the_selected_kind() {
         for kind in [DocumentKind::Quote, DocumentKind::Invoice] {
-            let draft = blank_draft(kind.clone());
+            let draft = blank_draft(kind.clone(), "2026-07-26");
 
             assert_eq!(draft.kind, kind);
-            assert!(draft.issue_date.is_empty());
+            // The issue date is the one field she never has to retype…
+            assert_eq!(draft.issue_date, "2026-07-26");
+            // …and the event date is the one she must always choose: a
+            // plausible default here would ship inside a frozen document.
             assert!(draft.event_date.is_empty());
             assert!(draft.payment_terms.is_empty());
             assert!(draft.client.name.is_empty());

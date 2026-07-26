@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 use crate::domain::{
     db::{list_catalog, upsert_catalog_item},
     models::CatalogItem,
-    money::{format_eur, parse_eur_to_cents},
+    money::parse_eur_to_cents,
     validation::{MAX_UNIT_PRICE_CENTS, validate_catalog_items},
 };
 
@@ -15,7 +15,7 @@ use super::{
     app::DatabaseContext,
     components::{
         BottomSheet, Button, ButtonVariant, EmptyState, ErrorBlock, OutlinedField, SegmentedButton,
-        group_catalog_items,
+        group_catalog_items, item_price_detail,
     },
 };
 
@@ -63,7 +63,7 @@ pub(super) fn Catalog() -> Element {
     let groups = group_catalog_items(items.to_vec());
 
     rsx! {
-        section { class: "screen catalog-screen", aria_label: "Catalogue",
+        section { class: "screen", aria_label: "Catalogue",
             if let Some(error) = load_error {
                 ErrorBlock {
                     title: "Chargement impossible".to_string(),
@@ -326,14 +326,6 @@ fn cents_to_euro_input(cents: i64) -> String {
     let sign = if cents < 0 { "-" } else { "" };
     let abs = cents.unsigned_abs();
     format!("{sign}{},{:02}", abs / 100, abs % 100)
-}
-
-fn item_price_detail(item: &CatalogItem) -> String {
-    let price = format_eur(item.unit_price_cents);
-    match item.unit.as_deref().map(str::trim) {
-        Some(unit) if !unit.is_empty() => format!("{price} / {unit}"),
-        _ => price,
-    }
 }
 
 fn catalog_row_label(item: &CatalogItem) -> String {

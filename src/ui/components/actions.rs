@@ -38,25 +38,14 @@ pub fn Button(
     #[props(default)] variant: ButtonVariant,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
-    #[props(default)] error: bool,
-    #[props(default = true)] announce_error: bool,
 ) -> Element {
-    let class = format!(
-        "m3-button {}{}",
-        variant.class(),
-        if error { " is-error" } else { "" }
-    );
-    let accessible_label = if error {
-        format!("{label}, erreur")
-    } else {
-        label.clone()
-    };
+    let class = format!("m3-button {}", variant.class());
 
     rsx! {
         button {
             class,
             r#type: "button",
-            aria_label: accessible_label,
+            aria_label: label.clone(),
             disabled: disabled || loading,
             aria_busy: loading,
             onclick: move |event| onclick.call(event),
@@ -64,9 +53,6 @@ pub fn Button(
             if loading {
                 Spinner {}
             }
-        }
-        if error && announce_error {
-            ActionErrorStatus { message: "L’action a échoué." }
         }
     }
 }
@@ -79,21 +65,12 @@ pub fn Fab(
     controls: Option<String>,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
-    #[props(default)] error: bool,
-    #[props(default = true)] announce_error: bool,
 ) -> Element {
-    let class = if error { "fab is-error" } else { "fab" };
-    let accessible_label = if error {
-        format!("{label}, erreur")
-    } else {
-        label
-    };
-
     rsx! {
         button {
-            class,
+            class: "fab",
             r#type: "button",
-            aria_label: accessible_label,
+            aria_label: label,
             aria_controls: expanded.filter(|open| *open).and(controls),
             aria_expanded: expanded,
             aria_busy: loading,
@@ -104,9 +81,6 @@ pub fn Fab(
             } else {
                 PlusIcon {}
             }
-        }
-        if error && announce_error {
-            ActionErrorStatus { message: "L’action a échoué." }
         }
     }
 }
@@ -155,32 +129,23 @@ pub fn SegmentedButton(
     on_select: EventHandler<usize>,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
-    #[props(default)] error: bool,
-    #[props(default = true)] announce_error: bool,
 ) -> Element {
-    let class = if error {
-        "segmented-button is-error"
-    } else {
-        "segmented-button"
-    };
-    let accessible_label = if error {
-        format!("{label}, erreur")
-    } else {
-        label
-    };
-
     rsx! {
         div {
-            class,
-            role: "group",
-            aria_label: accessible_label,
+            class: "segmented-button",
+            // Three mutually exclusive filters are radios, not toggles: TalkBack
+            // then announces « coché, 2 sur 3 » instead of « activé », which is
+            // the part that carries the exclusivity.
+            role: "radiogroup",
+            aria_label: label,
             aria_busy: loading,
             for (index, option) in options.into_iter().enumerate() {
                 button {
                     class: "segmented-button__option",
                     r#type: "button",
+                    role: "radio",
                     aria_label: option.clone(),
-                    aria_pressed: index == selected,
+                    aria_checked: index == selected,
                     disabled: disabled || loading,
                     onclick: move |_| on_select.call(index),
                     span { class: "segmented-button__label", aria_hidden: loading, "{option}" }
@@ -190,24 +155,12 @@ pub fn SegmentedButton(
                 Spinner {}
             }
         }
-        if error && announce_error {
-            ActionErrorStatus { message: "L’action a échoué." }
-        }
     }
 }
 
 #[component]
 fn Spinner() -> Element {
     rsx! { span { class: "spinner", aria_hidden: "true" } }
-}
-
-#[component]
-pub(super) fn ActionErrorStatus(message: String) -> Element {
-    rsx! {
-        span { class: "visually-hidden", role: "status", aria_live: "polite",
-            "{message}"
-        }
-    }
 }
 
 #[component]

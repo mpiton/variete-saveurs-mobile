@@ -63,9 +63,30 @@ pub(super) enum IssueFailure {
     Failed(String),
 }
 
+/// Gate in front of the confirmation sheet: `true` when the draft is ready to
+/// be issued, otherwise the validation errors are published and the caller must
+/// not ask anything.
+///
+/// The order matters more than it looks. Issuing is the one irreversible act in
+/// the app, and the sheet names the number it is about to spend. Showing that
+/// sheet for a document the system already knows is invalid asks her to endorse
+/// something that will not happen — and the sheet then closes on a screen that
+/// looks unchanged, leaving her unable to tell whether the number was consumed.
+/// It never is (`peek_next_number` only reads the counter), but the screen said
+/// nothing. Validating first turns that dead end into the ordinary error path.
+pub(super) fn check_before_issue(mut flow: IssueFlow, input: &DocumentInput) -> bool {
+    let errors = validate_document_fields(input);
+    if errors.is_empty() {
+        return true;
+    }
+    flow.0.set(IssuePhase::Invalid(errors));
+    false
+}
+
 /// Starts the whole chain from an « Émettre » tap. The phase itself guards
 /// the double-tap: a second call while `Running` returns immediately (the
-/// button is also disabled by its loading state).
+/// button is also disabled by its loading state). Validation runs again here:
+/// this is the authoritative check, `check_before_issue` is the early one.
 pub(super) fn start_issue(mut flow: IssueFlow, database: DatabaseContext, input: DocumentInput) {
     if matches!(&*flow.0.read(), IssuePhase::Running) {
         return;

@@ -1,7 +1,4 @@
 use dioxus::prelude::*;
-
-use super::actions::ActionErrorStatus;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BadgeKind {
     Sent,
@@ -40,29 +37,22 @@ pub fn DocumentCard(
     number: i64,
     client: String,
     total: String,
+    /// French issue date. The list carried no date at all and has no ceiling,
+    /// so « le devis de la semaine dernière » was a scroll.
+    issue_date: String,
     onclick: EventHandler<MouseEvent>,
     #[props(default)] sent: bool,
     #[props(default)] invoiced: bool,
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
-    #[props(default)] error: bool,
-    #[props(default = true)] announce_error: bool,
 ) -> Element {
     let statuses = status_suffix(sent, invoiced);
-    let error_suffix = if error { ", erreur" } else { "" };
     let accessible_label =
-        format!("{document_type} numéro {number}, {client}, total {total}{statuses}{error_suffix}");
-    let error_announcement =
-        format!("Échec pour {document_type} numéro {number}, client {client}.");
-    let class = if error {
-        "document-card is-error"
-    } else {
-        "document-card"
-    };
+        format!("{document_type} numéro {number}, {client}, {issue_date}, total {total}{statuses}");
 
     rsx! {
         button {
-            class,
+            class: "document-card",
             r#type: "button",
             aria_label: accessible_label,
             aria_busy: loading,
@@ -74,13 +64,16 @@ pub fn DocumentCard(
                     strong { class: "document-card__total", "{total}" }
                 }
                 span { class: "document-card__client", "{client}" }
-                if sent || invoiced {
-                    span { class: "document-card__badges",
-                        if sent {
-                            StatusBadge { kind: BadgeKind::Sent }
-                        }
-                        if invoiced {
-                            StatusBadge { kind: BadgeKind::Invoiced }
+                span { class: "document-card__meta",
+                    span { class: "document-card__date", "{issue_date}" }
+                    if sent || invoiced {
+                        span { class: "document-card__badges",
+                            if sent {
+                                StatusBadge { kind: BadgeKind::Sent }
+                            }
+                            if invoiced {
+                                StatusBadge { kind: BadgeKind::Invoiced }
+                            }
                         }
                     }
                 }
@@ -88,9 +81,6 @@ pub fn DocumentCard(
             if loading {
                 span { class: "spinner", aria_hidden: "true" }
             }
-        }
-        if error && announce_error {
-            ActionErrorStatus { message: error_announcement }
         }
     }
 }

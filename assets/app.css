@@ -9,6 +9,10 @@
     --color-ink: #4A2C1A;
     --color-muted: #6B5A4E;
     --color-label: #5A4535;
+    /* Two strengths, and the choice follows depth, not taste: a container posed
+       on the page takes `border`, a row posed inside a container takes
+       `border-soft`. On the cream, the soft filet only reached 1.15:1 and the
+       list of documents read as one continuous block. */
     --color-border: #DCD0B8;
     --color-border-soft: #E9E1CE;
     /* Rouge Enseigne darkened to the tone the splash loop sits at, so the
@@ -19,6 +23,17 @@
     --color-primary: #C0182B;
     --color-on-primary: #FFFFFF;
     --color-primary-tint: #F7E3E5;
+    /* The tonal container as it sits *on the chrome bar*, which is the one
+       place where the two schemes diverge instead of mirroring. Here the plain
+       tint already clears 9.85:1 against the chrome, so it is the tint. */
+    --color-on-chrome-container: var(--color-primary-tint);
+    --color-on-chrome-container-label: var(--color-primary);
+    /* The primary action keeps its Rouge Enseigne fill on the chrome — giving
+       it the tonal container would flatten it into the button beside it — so
+       its shape is drawn by an edge instead: the fill alone is 1.97:1 here,
+       the white edge is 12.12:1. In the dark scheme the fill is Rose Praliné
+       and already clears 7.71:1, so the edge steps aside. */
+    --color-on-chrome-primary-edge: var(--color-on-chrome);
     /* DESIGN.md §2 — the error red cannot be told apart from the brand red by
        contrast (no legible red clears 3:1 against #C0182B), so the two are
        separated by role: primary fills, danger only outlines and labels, and
@@ -91,6 +106,16 @@
         /* A dark red container: the pale light tint only reaches 1.9:1
            under the lightened primary that sits on it. */
         --color-primary-tint: #3A181C;
+        /* On the chrome bar the tint above collapses: #3A181C and the dark
+           chrome #4A0C16 sit at the same luminance, 1.02:1, so the button's
+           shape disappears and only its label floats. Lightened until the fill
+           clears M3's 3:1 for non-text contrast (3.08:1); white rides it at
+           5.03:1, where the lightened primary would only reach 2.5:1. */
+        --color-on-chrome-container: #B44E58;
+        --color-on-chrome-container-label: #FFFFFF;
+        /* Rose Praliné on the dark chrome is 7.71:1 — the fill is the shape,
+           an edge on top of it would only be noise. */
+        --color-on-chrome-primary-edge: transparent;
         /* Kept off the lightened primary's hue: danger kept its salmon while
            primary moved to rose, so the two still read apart at a glance. */
         --color-danger: #F2938C;
@@ -136,16 +161,25 @@ input {
     font: inherit;
 }
 
+/* Every element the app actually makes tappable. `textarea` and `summary` are
+   focusable and tappable by default and were keeping the UA's grey highlight. */
 button,
 a,
-input {
+input,
+textarea,
+summary {
     -webkit-tap-highlight-color: var(--color-tap-highlight);
     touch-action: manipulation;
 }
 
+/* Every focusable element the app actually renders. `textarea` (the email
+   body) and `summary` (the record's line list) are focusable by default and
+   were falling through this list, so keyboard focus landed on them invisibly. */
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
@@ -240,6 +274,10 @@ input:focus-visible {
     color: var(--color-primary);
 }
 
+/* No bottom padding by default: a sticky bar's constraint rectangle is the
+   scrollport *minus this container's padding*, so any value here parks the
+   chrome that many pixels above the screen edge — the system navigation band
+   ended up painted in the content colour, with content scrolling into it. */
 .screen-scroll {
     min-height: 0;
     flex: 1;
@@ -248,9 +286,16 @@ input:focus-visible {
     padding:
         var(--space-lg)
         max(var(--space-gutter), var(--system-inset-right))
-        calc(var(--space-lg) + var(--system-inset-bottom))
+        0
         max(var(--space-gutter), var(--system-inset-left));
     background: var(--color-bg);
+}
+
+/* Screens without a chrome bar have nothing to paint over the navigation
+   band, so they reserve it themselves. The inset is counted exactly once on
+   this axis, here or on the bar — never on both. */
+.screen-scroll:not(:has(.chrome-action-bar)) {
+    padding-bottom: calc(var(--space-lg) + var(--system-inset-bottom));
 }
 
 .screen {
@@ -278,66 +323,16 @@ input:focus-visible {
     display: grid;
     gap: var(--space-sm);
     padding: var(--space-lg);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
 }
 
-.route-list {
-    display: grid;
-    gap: var(--space-sm);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.route-link {
-    display: flex;
-    min-height: var(--touch-target);
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--touch-gap);
-    padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    background: var(--color-surface);
-    color: var(--color-primary);
-    font-size: var(--type-label-large-size);
-    font-weight: 700;
-    text-decoration: none;
-}
-
-.route-link:active {
-    background: var(--color-primary-tint);
-}
-
-.field {
-    display: grid;
-    gap: var(--space-xs);
-    color: var(--color-label);
-    font-size: var(--type-label-medium-size);
-    font-weight: 700;
-}
-
-.field input {
-    width: 100%;
-    min-height: var(--touch-target);
-    padding: 0 var(--space-sm);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-control);
-    background: var(--color-surface);
-    color: var(--color-ink);
-    font-size: var(--type-body-large-size);
-    font-weight: 400;
-}
-
-.field input::placeholder {
-    color: var(--color-muted);
-    opacity: 1;
-}
-
+/* `textarea` was missing here, so a disabled email body looked exactly like an
+   active one — only its floating label dimmed. */
 button:disabled,
-input:disabled {
+input:disabled,
+textarea:disabled {
     opacity: 0.38;
     cursor: default;
 }
@@ -402,7 +397,10 @@ input[aria-busy="true"]:disabled {
     cursor: pointer;
     font-size: var(--type-label-large-size);
     font-weight: 700;
-    line-height: 1;
+    /* A long label such as « Exporter le PDF / PNG » wraps once the system font
+       scale climbs; at `1` the two lines touch. The button is centred inside a
+       min-height, so the single-line case does not move. */
+    line-height: 1.2;
 }
 
 .m3-button--filled {
@@ -428,11 +426,6 @@ input[aria-busy="true"]:disabled {
 
 .m3-button:active {
     background-image: linear-gradient(var(--color-state-pressed), var(--color-state-pressed));
-}
-
-.m3-button.is-error {
-    border-color: var(--color-danger);
-    outline: 1px solid var(--color-danger);
 }
 
 .m3-button[aria-busy="true"] .m3-button__label {
@@ -466,9 +459,14 @@ input[aria-busy="true"]:disabled {
     background-image: linear-gradient(var(--color-state-pressed), var(--color-state-pressed));
 }
 
-.fab.is-error {
-    outline: 2px solid var(--color-danger);
-    outline-offset: 2px;
+/* M3 turns the FAB's plus into a close mark while its menu is open. The glyph
+   is symmetrical, so the quarter-turn is the whole icon — no second asset. */
+.fab .lucide {
+    transition: rotate 200ms ease-out;
+}
+
+.fab[aria-expanded="true"] .lucide {
+    rotate: 45deg;
 }
 
 .fab-menu {
@@ -548,7 +546,7 @@ input[aria-busy="true"]:disabled {
     border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
 }
 
-.segmented-button__option[aria-pressed="true"] .segmented-button__label {
+.segmented-button__option[aria-checked="true"] .segmented-button__label {
     border-color: var(--color-primary);
     background: var(--color-primary);
     color: var(--color-on-primary);
@@ -556,11 +554,6 @@ input[aria-busy="true"]:disabled {
 
 .segmented-button__option:active {
     background-image: linear-gradient(var(--color-state-pressed), var(--color-state-pressed));
-}
-
-.segmented-button.is-error {
-    outline: 2px solid var(--color-danger);
-    outline-offset: 2px;
 }
 
 .segmented-button > .spinner {
@@ -698,7 +691,7 @@ input[aria-busy="true"]:disabled {
     display: grid;
     gap: var(--space-sm);
     padding: var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
 }
@@ -744,6 +737,21 @@ input[aria-busy="true"]:disabled {
         calc(var(--space-sm) + var(--system-inset-bottom))
         max(var(--space-gutter), var(--system-inset-left));
     background: var(--color-chrome);
+}
+
+/* Tonal buttons stand on the chrome, not on a content surface, so they take
+   their container from the chrome pair rather than from `--color-primary-tint`. */
+.chrome-action-bar .m3-button--tonal {
+    background: var(--color-on-chrome-container);
+    color: var(--color-on-chrome-container-label);
+}
+
+/* Same rule, other variant: an aplat is measured against the surface it is
+   posed on, and Rouge Enseigne on the chrome is 1.97:1. The fill stays — it is
+   what tells the primary action apart from the tonal next to it — and the edge
+   carries the shape. */
+.chrome-action-bar .m3-button--filled {
+    border-color: var(--color-on-chrome-primary-edge);
 }
 
 .form-action-bar {
@@ -875,7 +883,7 @@ input[aria-busy="true"]:disabled {
     min-height: 112px;
     overflow: hidden;
     padding: var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
     color: var(--color-ink);
@@ -885,10 +893,6 @@ input[aria-busy="true"]:disabled {
 
 .document-card:active {
     background: var(--color-surface-dim);
-}
-
-.document-card.is-error {
-    border-color: var(--color-danger);
 }
 
 .document-card__content {
@@ -922,6 +926,21 @@ input[aria-busy="true"]:disabled {
 
 .document-card__client {
     font-size: var(--type-body-large-size);
+}
+
+/* The date and the statuses share one row: the list had neither a date nor a
+   ceiling, so finding « le devis de la semaine dernière » was a scroll. */
+.document-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--touch-gap);
+}
+
+.document-card__date {
+    color: var(--color-muted);
+    font-size: var(--type-body-medium-size);
 }
 
 .document-card__badges {
@@ -1001,12 +1020,12 @@ input[aria-busy="true"]:disabled {
     border-bottom: 0;
 }
 
-.bottom-sheet__handle {
-    width: 32px;
-    height: 4px;
-    justify-self: center;
-    border-radius: var(--radius-pill);
-    background: var(--color-muted);
+/* Names the third delivery: it is reached through the Android chooser, so the
+   sheet is the only place it can be written. */
+.share-sheet__hint {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--type-body-medium-size);
 }
 
 .bottom-sheet h2 {
@@ -1077,8 +1096,11 @@ input[aria-busy="true"]:disabled {
     height: 48px;
 }
 
+/* Clearance under the FAB only. The system inset is already reserved by
+   `.screen-scroll` on a screen with no chrome bar — adding it here counted it
+   twice on the same axis and made the list scroll by the inset alone. */
 .home-screen {
-    padding-bottom: calc(72px + var(--system-inset-bottom));
+    padding-bottom: 72px;
 }
 
 .home-document-list {
@@ -1091,7 +1113,7 @@ input[aria-busy="true"]:disabled {
     min-height: 80px;
     gap: var(--space-xs);
     padding: var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
     color: var(--color-ink);
@@ -1119,7 +1141,7 @@ input[aria-busy="true"]:disabled {
     bottom: calc(var(--space-lg) + var(--system-inset-bottom));
 }
 
-.home-confirmation-actions {
+.confirmation-actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -1166,6 +1188,15 @@ input[aria-busy="true"]:disabled {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--touch-gap);
+}
+
+/* The receipt for taps that land behind the scrim: the sheet no longer closes
+   on each pick, so the count is the only thing saying the chip registered. */
+.catalog-picker__count {
+    margin: 0;
+    color: var(--color-muted);
+    font-size: var(--type-body-medium-size);
+    text-align: center;
 }
 
 /* Task 16: chips stay at 54px minimum, above the 48dp touch floor. */
@@ -1226,10 +1257,14 @@ input[aria-busy="true"]:disabled {
     display: flex;
     height: 100%;
     flex-direction: column;
+    /* These negative margins cancel `.screen-scroll`'s padding exactly, so the
+       A4 sheet bleeds to the edges. The bottom one is 0 because that padding is
+       0 on a screen that carries a chrome bar — the bar reserves the navigation
+       band itself. Any change to `.screen-scroll` has to be mirrored here. */
     margin:
         calc(-1 * var(--space-lg))
         calc(-1 * max(var(--space-gutter), var(--system-inset-right)))
-        calc(-1 * (var(--space-lg) + var(--system-inset-bottom)))
+        0
         calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
 }
 
@@ -1302,15 +1337,24 @@ input[aria-busy="true"]:disabled {
 /* Issued document record (task 21): summary card + collapsible read-only
    lines up top, action stack sticky in the bottom third (Règle du Pouce).
    The sticky chrome bar reuses the form's negative-margin bleed. */
+/* Flex column, like `.form-screen` — and for two reasons at once. On a grid,
+   `min-height: 100%` makes the auto tracks share the leftover space, so a short
+   document stretched its own buttons past the 48px they specify; `align-content:
+   start` fixes that but also kills the `margin-top: auto` that anchors the
+   sticky bar, which then floats mid-screen. Flex does both properly: items keep
+   their size, and `margin-top: auto` still pushes the last one down. */
 .record-screen {
+    display: flex;
     min-height: 100%;
+    flex-direction: column;
+    gap: var(--space-md);
 }
 
 .record-summary {
     display: grid;
     gap: var(--space-xs);
     padding: var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
 }
@@ -1338,6 +1382,12 @@ input[aria-busy="true"]:disabled {
     font-size: var(--type-body-medium-size);
 }
 
+/* The way into the document, attached to the document itself rather than to
+   the bar of things you can do with it. */
+.record-summary > .m3-button {
+    margin-top: var(--space-sm);
+}
+
 .record-summary__badges {
     display: flex;
     gap: var(--touch-gap);
@@ -1345,7 +1395,7 @@ input[aria-busy="true"]:disabled {
 }
 
 .record-lines {
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
 }
@@ -1381,14 +1431,31 @@ input[aria-busy="true"]:disabled {
     background: var(--color-surface);
 }
 
+/* Conversion and duplication: real actions, but accounting maintenance rather
+   than delivery, so they live with the document and leave the bar to the two
+   paths that reach the client. */
+.record-secondary-actions {
+    display: grid;
+    gap: var(--touch-gap);
+}
+
 .record-sticky {
     position: sticky;
     bottom: 0;
     margin-top: auto;
 }
 
+/* A snackbar inside the sticky block rides above the bar. Rendered after it,
+   as it used to be, it was painted underneath and never seen. */
+.record-sticky > .snackbar {
+    margin-bottom: var(--space-sm);
+}
+
+/* Two actions of equal weight — PRODUCT.md keeps the delivery paths at parity,
+   so neither may take the wider column. The hint spans both. */
 .record-action-bar {
     display: grid;
+    grid-template-columns: 1fr 1fr;
     margin-right: calc(-1 * max(var(--space-gutter), var(--system-inset-right)));
     margin-left: calc(-1 * max(var(--space-gutter), var(--system-inset-left)));
 }
@@ -1416,7 +1483,7 @@ input[aria-busy="true"]:disabled {
     display: grid;
     gap: var(--space-sm);
     padding: var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
 }
@@ -1431,21 +1498,27 @@ input[aria-busy="true"]:disabled {
    bar: the only cue left once the home prompt is dismissed. Specificity
    must beat `.screen p` (0,1,1). */
 .record-screen .record-action-hint {
+    grid-column: 1 / -1;
     padding: 0 var(--space-md);
     color: var(--color-on-chrome-muted);
     text-align: center;
 }
 
-.record-action-hint a {
+/* A text button on the chrome cannot take `--color-primary`: Rouge Enseigne on
+   the chrome reads 1.97:1. The on-chrome white clears 12:1 in both schemes. */
+.chrome-action-bar .m3-button--text {
+    grid-column: 1 / -1;
     color: var(--color-on-chrome);
-    font-weight: 700;
 }
 
 /* Compose screen (task 27): one task — write and send. The attachment
    choice is a real radio group with the real file names, the send action
    lives in the bottom third (Règle du Pouce). */
 .compose-screen {
+    display: flex;
     min-height: 100%;
+    flex-direction: column;
+    gap: var(--space-md);
 }
 
 .compose-format {
@@ -1453,7 +1526,7 @@ input[aria-busy="true"]:disabled {
     gap: var(--touch-gap);
     margin: 0;
     padding: var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
 }
@@ -1539,10 +1612,19 @@ input[aria-busy="true"]:disabled {
 }
 
 /* Must stay after the rules above — same specificity, later wins. */
+/* Every motion escape lives here, at the end of the file, because they all
+   match their own rule's specificity: only source order decides. The FAB's
+   neutraliser used to sit 89 lines *before* the transition it cancels, so the
+   transition won and « Remove animations » did nothing to it. */
 @media (prefers-reduced-motion: reduce) {
     /* First frame stays frozen: the script skips `play()` under this query. */
     .splash,
     .splash__logo {
         animation: none;
+    }
+
+    /* The rotation is state, not decoration: it still lands, it just cuts. */
+    .fab .lucide {
+        transition: none;
     }
 }

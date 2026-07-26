@@ -265,6 +265,215 @@ fn dark_palette_matches_the_design_and_meets_aa_contrast() {
 }
 
 #[test]
+fn every_button_variant_on_the_chrome_bar_keeps_a_shape_in_both_schemes() {
+    let css = project_file("assets/app.css");
+    let dark = dark_block(&css);
+    let light = css.replace(dark, "");
+
+    // The rule is « an aplat is measured against the surface it is posed on »,
+    // and the chrome is the one surface where the two schemes diverge instead
+    // of mirroring. The first version of this guard covered only the tonal
+    // variant — the one where the bug had shown up — and the filled variant sat
+    // at 1.97:1 in the light scheme for as long as it did. So: every variant
+    // the bar carries, both schemes, and either signal may carry the shape.
+    for selector in [
+        ".chrome-action-bar .m3-button--tonal",
+        ".chrome-action-bar .m3-button--filled",
+    ] {
+        assert!(css.contains(selector), "{selector} must be remapped");
+    }
+
+    /// One button variant, in one scheme: name, fill, edge, label, chrome.
+    /// `None` marks a signal deliberately absent — it simply cannot be the one
+    /// carrying the shape.
+    struct Variant<'a> {
+        name: &'a str,
+        fill: Option<&'a str>,
+        edge: Option<&'a str>,
+        label: &'a str,
+        chrome: &'a str,
+    }
+
+    let cases = [
+        Variant {
+            name: "tonal/clair",
+            fill: Some(css_token(&light, "--color-primary-tint")),
+            edge: None,
+            label: css_token(&light, "--color-primary"),
+            chrome: css_token(&light, "--color-chrome"),
+        },
+        Variant {
+            name: "tonal/sombre",
+            fill: Some(css_token(dark, "--color-on-chrome-container")),
+            edge: None,
+            label: css_token(dark, "--color-on-chrome-container-label"),
+            chrome: css_token(dark, "--color-chrome"),
+        },
+        Variant {
+            name: "filled/clair",
+            fill: Some(css_token(&light, "--color-primary")),
+            edge: Some(css_token(&light, "--color-on-chrome")),
+            label: css_token(&light, "--color-on-primary"),
+            chrome: css_token(&light, "--color-chrome"),
+        },
+        Variant {
+            // The edge is `transparent` here: the fill has to stand alone.
+            name: "filled/sombre",
+            fill: Some(css_token(dark, "--color-primary")),
+            edge: None,
+            label: css_token(dark, "--color-on-primary"),
+            chrome: css_token(dark, "--color-chrome"),
+        },
+    ];
+
+    for case in cases {
+        // M3 asks 3:1 of whatever visual signal identifies the control. Fill or
+        // edge — one of the two has to carry it.
+        let fill_ratio = case
+            .fill
+            .map_or(0.0, |value| contrast_ratio(value, case.chrome));
+        let edge_ratio = case
+            .edge
+            .map_or(0.0, |value| contrast_ratio(value, case.chrome));
+        let name = case.name;
+        assert!(
+            fill_ratio.max(edge_ratio) >= 3.0,
+            "{name}: the button has no shape on the chrome (aplat {fill_ratio:.2}:1, bord {edge_ratio:.2}:1)"
+        );
+        // And AA of the label riding the fill.
+        if let Some(fill) = case.fill {
+            let text = contrast_ratio(case.label, fill);
+            assert!(text >= 4.5, "{name}: the label is {text:.2}:1 on its fill");
+        }
+    }
+}
+
+#[test]
+fn the_bottom_system_inset_is_counted_once_on_its_axis() {
+    let css = project_file("assets/app.css");
+    let body = |selector: &str| {
+        css.split(selector)
+            .nth(1)
+            .and_then(|rule| rule.split('}').next())
+            .unwrap_or_else(|| panic!("missing rule {selector}"))
+            .to_string()
+    };
+
+    // A sticky bar's constraint rectangle is the scrollport *minus this
+    // container's padding*, so any bottom padding here parks the chrome that
+    // many pixels above the screen edge — the navigation band then shows the
+    // content colour, with content scrolling into it.
+    assert!(
+        !body(".screen-scroll {").contains("--system-inset-bottom"),
+        "the scroll container must not reserve the bottom inset when a bar can paint it"
+    );
+
+    // The bar carries it instead: background to the edge, labels above the band.
+    assert!(body(".chrome-action-bar {").contains("var(--system-inset-bottom)"));
+
+    // And screens with no bar reserve it themselves, so it is counted once
+    // either way — never twice, never zero times.
+    assert!(
+        css.contains(".screen-scroll:not(:has(.chrome-action-bar))"),
+        "screens without a chrome bar must reserve the navigation band"
+    );
+}
+
+#[test]
+fn the_record_action_bar_keeps_its_two_delivery_paths_at_parity() {
+    let css = project_file("assets/app.css");
+    let bar = css
+        .split(".record-action-bar {")
+        .nth(1)
+        .and_then(|rule| rule.split('}').next())
+        .expect("the record action bar rule must exist");
+
+    // PRODUCT.md keeps sharing and sending at parity, so the bar gives them
+    // one column each — a wider one for either would privilege it by form.
+    assert!(
+        bar.contains("grid-template-columns: 1fr 1fr;"),
+        "the two delivery actions must share the bar evenly"
+    );
+
+    // The disabled-send explanation is not a third action: it spans.
+    let hint = css
+        .split(".record-screen .record-action-hint {")
+        .nth(1)
+        .and_then(|rule| rule.split('}').next())
+        .expect("the hint rule must exist");
+    assert!(hint.contains("grid-column: 1 / -1;"));
+}
+
+#[test]
+fn keyboard_focus_is_visible_on_every_focusable_element_the_app_renders() {
+    let css = project_file("assets/app.css");
+    // The email body is a `textarea` and the record's line list a `summary`:
+    // both take focus by default and neither is a button, a link or an input,
+    // so both fell through the global ring.
+    for selector in [
+        "button:focus-visible",
+        "a:focus-visible",
+        "input:focus-visible",
+        "textarea:focus-visible",
+        "summary:focus-visible",
+    ] {
+        assert!(css.contains(selector), "{selector} has no focus ring");
+    }
+}
+
+#[test]
+fn the_fab_glyph_turns_with_its_menu_and_still_cuts_under_reduced_motion() {
+    let css = project_file("assets/app.css");
+    assert!(
+        css.contains(".fab[aria-expanded=\"true\"] .lucide"),
+        "the open state must reach the glyph, not only the accessible label"
+    );
+
+    // Motion here is state, not decoration, so « Remove animations » must keep
+    // the end position and drop only the travel.
+    //
+    // The rule is positional, and that is the whole point: the escape carries
+    // the same specificity as the rule it cancels, so only source order decides.
+    // Asserting « a reduce block mentions it somewhere » passed for a while
+    // with the escape declared 89 lines *before* the transition, where it did
+    // nothing at all.
+    let declaration = css
+        .find(".fab .lucide {\n    transition:")
+        .expect("the FAB glyph must declare its transition");
+    let escape = css
+        .match_indices("@media (prefers-reduced-motion: reduce)")
+        .filter_map(|(at, _)| {
+            let block = &css[at..];
+            let block = &block[..block.find("\n}\n").unwrap_or(block.len())];
+            (block.contains(".fab .lucide") && block.contains("transition: none")).then_some(at)
+        })
+        .next()
+        .expect("the FAB rotation has no reduced-motion escape");
+
+    assert!(
+        escape > declaration,
+        "the escape is declared before the transition it cancels, so it loses the cascade"
+    );
+}
+
+#[test]
+fn the_segmented_button_styles_the_state_it_announces() {
+    let css = project_file("assets/app.css");
+    let actions = project_file("src/ui/components/actions.rs");
+
+    // Mutually exclusive filters are radios: TalkBack then carries the
+    // exclusivity. The active-segment rule has to follow the attribute the
+    // component emits, or the selection silently stops being visible.
+    assert!(actions.contains("role: \"radio\""));
+    assert!(actions.contains("aria_checked: index == selected"));
+    assert!(css.contains("[aria-checked=\"true\"] .segmented-button__label"));
+    assert!(
+        !css.contains("aria-pressed"),
+        "a leftover aria-pressed rule would style a state nothing sets"
+    );
+}
+
+#[test]
 fn dark_scheme_overrides_every_light_color_token() {
     let css = project_file("assets/app.css");
     let dark = dark_block(&css);

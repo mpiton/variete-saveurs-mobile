@@ -17,9 +17,12 @@ use crate::domain::{
 
 use super::{
     app::DatabaseContext,
-    components::{Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar, issue_label},
+    components::{
+        Button, ButtonVariant, ErrorBlock, IssueConfirmSheet, ShareSheet, Snackbar, issue_label,
+    },
     issue::{
-        ExportJobState, IssueFlow, IssuePhase, start_export, start_issue, use_export_notice_dismiss,
+        ExportJobState, IssueFlow, IssuePhase, check_before_issue, start_export, start_issue,
+        use_export_notice_dismiss,
     },
     share::{share_file_names, use_share_flow},
 };
@@ -185,6 +188,7 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                         if draft {
                             IssueDraftButton {
                                 kind: data.kind.clone(),
+                                number: data.number,
                                 input: data.input.clone(),
                             }
                         } else {
@@ -201,13 +205,8 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                                 variant: ButtonVariant::Tonal,
                                 onclick: move |_| share.open_sheet(),
                             }
-                            Button {
-                                label: "Envoyer".to_string(),
-                                variant: ButtonVariant::Tonal,
-                                // Branché sur l’envoi email dans les tâches 26/27.
-                                disabled: true,
-                                onclick: move |_| {},
-                            }
+                            // No « Envoyer » here: sending is the fiche's, and a
+                            // permanently disabled button taught nothing.
                         }
                     }
                     if let Some(message) = export_message {
@@ -230,15 +229,34 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
 /// re-triggers the SQLite reload + HTML render above (the draft disappears
 /// from under the screen on success — navigation moves to the fiche first).
 #[component]
-fn IssueDraftButton(kind: DocumentKind, input: DocumentInput) -> Element {
+fn IssueDraftButton(kind: DocumentKind, number: i64, input: DocumentInput) -> Element {
     let database = use_context::<DatabaseContext>();
     let issue_flow = use_context::<IssueFlow>();
     let issuing = matches!(&*issue_flow.0.read(), IssuePhase::Running);
+    // The preview already shows the number on the sheet; the confirmation is
+    // here for the same reason as on the form — the act is irreversible.
+    let mut confirming = use_signal(|| false);
     rsx! {
         Button {
             label: issue_label(&kind).to_string(),
             loading: issuing,
-            onclick: move |_| {
+            // Same gate as the form: an invalid draft never reaches the sheet.
+            onclick: {
+                let input = input.clone();
+                move |_| {
+                    if check_before_issue(issue_flow, &input) {
+                        confirming.set(true);
+                    }
+                }
+            },
+        }
+        IssueConfirmSheet {
+            kind: kind.clone(),
+            number,
+            open: confirming(),
+            on_cancel: move |_| confirming.set(false),
+            on_confirm: move |_| {
+                confirming.set(false);
                 start_issue(issue_flow, database.clone(), input.clone());
             },
         }

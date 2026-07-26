@@ -16,7 +16,9 @@ use rusqlite::Connection;
 use crate::{
     domain::{
         db::{get_document, mark_sent},
-        email::{Attachment, EmailPlaceholders, MailConfig, Mailer, render_email},
+        email::{
+            Attachment, EmailPlaceholders, MailConfig, Mailer, render_email, render_email_html,
+        },
         models::{Document, DocumentKind},
         render::validity_end_date,
         settings::load_email_credentials,
@@ -62,7 +64,9 @@ pub(super) struct ComposeData {
     pub document: Document,
     pub to: String,
     pub subject: String,
-    pub body_html: String,
+    /// Plain text — the fixed template wraps it at send time. The screen used
+    /// to hand her the whole `templates/email.html` in a textarea.
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,27 +84,34 @@ pub(super) fn load_compose(connection: &Connection, id: i64) -> Result<ComposeDa
         }
     })?;
     let input = &document.input;
-    // The validity sentence matches the document itself (« valable jusqu'au »
-    // = issue date + 30 days, rule owned by `render`), so the email never
-    // promises a date the PDF contradicts.
-    let content = render_email(
-        &input.kind,
-        &EmailPlaceholders {
-            doc_number: document.number,
-            client_name: input.client.name.clone(),
-            total_cents: document.total_cents,
-            validity_date: match input.kind {
-                DocumentKind::Quote => validity_end_date(&input.issue_date),
-                DocumentKind::Invoice => None,
-            },
-        },
-    );
+    let content = render_email(&input.kind, &placeholders(&document));
     Ok(ComposeData {
         to: input.client.email.clone().unwrap_or_default(),
         subject: content.subject,
-        body_html: content.body_html,
+        message: content.message,
         document,
     })
+}
+
+/// The validity sentence matches the document itself (« valable jusqu'au » =
+/// issue date + 30 days, rule owned by `render`), so the email never promises
+/// a date the PDF contradicts.
+fn placeholders(document: &Document) -> EmailPlaceholders {
+    let input = &document.input;
+    EmailPlaceholders {
+        doc_number: document.number,
+        client_name: input.client.name.clone(),
+        total_cents: document.total_cents,
+        validity_date: match input.kind {
+            DocumentKind::Quote => validity_end_date(&input.issue_date),
+            DocumentKind::Invoice => None,
+        },
+    }
+}
+
+/// Her retouched text, wrapped in the fixed template at the moment of sending.
+fn body_html_for(document: &Document, message: &str) -> String {
+    render_email_html(&document.input.kind, &placeholders(document), message)
 }
 
 /// Simple recipient gate (task 27): an empty or implausible address blocks
@@ -270,7 +281,7 @@ pub(super) fn Compose(id: i64) -> Element {
     });
     let mut body = use_signal(|| {
         initial_data
-            .map(|data| data.body_html.clone())
+            .map(|data| data.message.clone())
             .unwrap_or_default()
     });
     let mut format = use_signal(|| ShareFormat::Pdf);
@@ -407,7 +418,9 @@ pub(super) fn Compose(id: i64) -> Element {
                                 send_document.clone(),
                                 recipient,
                                 subject.peek().clone(),
-                                body.peek().clone(),
+                                // Her text meets the fixed template here, and
+                                // nowhere else: markup never reaches the field.
+                                body_html_for(&send_document, &body.peek()),
                                 format(),
                             );
                         },
@@ -442,8 +455,8 @@ mod tests {
     };
 
     use super::{
-        ComposeError, ShareFormat, attachment_from_export, load_compose, load_send_config,
-        mark_sent_after_send, recipient_error,
+        ComposeError, ShareFormat, attachment_from_export, body_html_for, load_compose,
+        load_send_config, mark_sent_after_send, recipient_error,
     };
 
     fn temp_connection() -> (NamedTempFile, Mutex<Connection>) {
@@ -499,10 +512,43 @@ mod tests {
 
         assert_eq!(data.to, "marie@example.fr");
         assert_eq!(data.subject, "Devis n° 10 — Variété de Saveurs");
-        assert!(data.body_html.contains("Marie Dupont"));
-        assert!(data.body_html.contains("devis n° 10"));
-        // The validity sentence matches the document: issue date + 30 days.
-        assert!(data.body_html.contains("valable jusqu'au 23/08/2026"));
+        // What she edits is plain text: no tag ever reaches the field.
+        assert!(data.message.contains("devis n° 10"));
+        assert!(!data.message.contains('<'));
+
+        // The template wraps it at send time — greeting, signature and the
+        // validity sentence (issue date + 30 days) stay out of her hands.
+        let body = body_html_for(&data.document, &data.message);
+        assert!(body.contains("Bonjour Marie Dupont,"));
+        assert!(body.contains("devis n° 10"));
+        assert!(body.contains("valable jusqu'au 23/08/2026"));
+    }
+
+    #[test]
+    fn a_retouched_message_is_escaped_and_keeps_the_template_around_it() {
+        let (_file, database) = temp_connection();
+        let mut write = lock(&database);
+        let quote = issue_document(
+            &mut write,
+            sample_input(DocumentKind::Quote),
+            "2026-07-24T10:00:00Z",
+        )
+        .expect("issue quote");
+        let data = load_compose(&write, quote.id).expect("compose data");
+
+        let body = body_html_for(
+            &data.document,
+            "Bonjour & merci <3\nÀ mardi.\n\nLe reste suit.",
+        );
+
+        // Her characters survive as characters, not as markup.
+        assert!(body.contains("Bonjour &amp; merci &lt;3"));
+        assert!(!body.contains("<3"));
+        // A single newline stays inside the paragraph, a blank line opens one.
+        assert!(body.contains("&lt;3<br>À mardi."));
+        assert_eq!(body.matches("<p style=\"margin:0 0 16px 0;\">").count(), 3);
+        // And the parts she cannot break are still there.
+        assert!(body.contains("Bien cordialement,"));
     }
 
     #[test]
@@ -536,7 +582,7 @@ mod tests {
             data.subject,
             format!("Facture n° {} — Variété de Saveurs", invoice.number)
         );
-        assert!(!data.body_html.contains("valable jusqu'au"));
+        assert!(!body_html_for(&data.document, &data.message).contains("valable jusqu'au"));
     }
 
     #[test]

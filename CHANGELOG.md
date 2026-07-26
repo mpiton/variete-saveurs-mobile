@@ -9,6 +9,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The record screen no longer offers six flat actions. Its chrome bar took 422
+  px of a 915 px screen — starting at mid-height, not in the bottom third the
+  design asks for — and truncated the line list behind it, with nothing saying
+  what to do first. The bar now carries only the two paths that reach the
+  client, « Partager » and « Envoyer par email », one column each: PRODUCT.md
+  keeps the delivery paths at parity, so neither takes the filled weight or the
+  wider column. « Aperçu » moves onto the summary card, where looking at the
+  document belongs to the document. « Convertir en facture » and « Dupliquer »
+  move into the body as outlined buttons — real actions, but accounting
+  maintenance rather than delivery.
+
+- The catalogue sheet stays open while picking. It closed on every chip, so a
+  traiteur quote of five to ten items cost seven interactions each; picks now
+  accumulate behind a « Terminé » button, with a live count as the receipt for
+  taps that land behind the scrim.
+
+- The share sheet names printing. PRODUCT.md keeps the three deliveries at
+  parity and the app never wrote the word — it is reached through the Android
+  chooser, so the sheet is the only place it can be said. « Partager le
+  document » becomes « Partager ou imprimer », with one line naming where the
+  choice happens. No `PrintManager`: that would be a v1 scope change, and the
+  path already exists.
+
+- Containers posed on the page take the firm border, rows posed inside a
+  container keep the soft one. On the cream, the soft filet reached only 1.15:1
+  against the background and the document list read as one continuous block;
+  the firm one reaches 1.34:1 in light and 1.63:1 in dark. Still short of WCAG
+  1.4.11's 3:1, and deliberately so: no Vitrine value clears that threshold
+  against the cream without leaving the palette. Documented as a limit of the
+  flat parti, not as a solved problem.
+
+- The splash is no longer a wall. Nothing waits on it — the database opens
+  before the first paint — so a tap dismisses it, and under
+  `prefers-reduced-motion` the wait drops from 2.24 s to 320 ms instead of
+  freezing a still image for the full brand beat. She opens the app several
+  times in an evening.
+
+- The email body is plain text again. « Message » held the whole of
+  `templates/email.html` after substitution — `<!DOCTYPE>`, a presentation
+  table, inline styles — in an editable textarea whose content went straight to
+  Brevo, so one keystroke inside a tag shipped a broken branded mail to a
+  client. `CLAUDE.md` asks for the opposite: « modèle fixe, texte retouchable ».
+  The template now carries a `{message}` placeholder; `render_email` returns
+  the sentences addressed to the client as plain text, and `render_email_html`
+  wraps them at send time — blank lines open paragraphs, single newlines become
+  `<br>`, everything she typed is escaped. The greeting, the signature, the
+  validity sentence and the letterhead are no longer hers to break.
+
+- Screen titles come from `CONTEXT.md` instead of the router: « Formulaire » →
+  « Brouillon », « Fiche » → « Document émis », « Composition » → « Envoi par
+  email ». The paths are unchanged — they are history entries.
+
+- Document cards carry their issue date, beside the status badges. The list had
+  no date and has no ceiling, so finding last week's quote was a scroll.
+
+- The segmented filter announces exclusivity. Three mutually exclusive filters
+  were a `role="group"` of `aria-pressed` toggles, which TalkBack reads as
+  « activé » with no sense of the set; they are now a `radiogroup` of radios
+  read as « coché, 2 sur 3 ». The active-segment rule follows the attribute the
+  component emits, and a test pins the two together — the previous pairing had
+  already drifted once. No arrow-key roving: the app is touch-only, and the
+  segments stay in the normal tab order.
+
+- The app menu is a disclosure rather than an ARIA menu. Its three children
+  carried `role="menuitem"` under a plain `<nav>` with no `role="menu"`, and
+  the trigger advertised `aria-haspopup`. Both are gone: `aria-expanded` plus
+  `aria-controls` describes what the code actually implements, without
+  promising the arrow-key roving an ARIA menu implies.
+
 - The app runs on the document's palette (DESIGN §2, task 33): the
   deep-teal « Le Comptoir » scheme is gone. Seven light tokens are now the
   Vitrine values verbatim (`bg` = Crème Vitrine #F6F0E2, `ink` = Brun
@@ -31,10 +100,198 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A disabled `textarea` looked exactly like an active one: the 38 % opacity rule
+  listed `button` and `input` only, so the email body dimmed nothing but its
+  floating label. `textarea` and `summary` were also keeping the UA's grey tap
+  highlight instead of the project's.
+
+- Short documents stretched their own buttons. `.record-screen` and
+  `.compose-screen` inherited `display: grid` and added `min-height: 100%`, so
+  the auto tracks shared the leftover space — buttons measured 53 to 85 px
+  against the 48 px they specify, and a collapsed `<details>` reached 98 px for
+  a 48 px summary. Both are flex columns now, like `.form-screen` already was:
+  items keep their size *and* `margin-top: auto` still anchors the sticky action
+  bar to the bottom. (`align-content: start` fixes the stretch but silently
+  breaks that anchor, and the bar then floats mid-screen — caught on the phone,
+  not by the tests.)
+
+- Issuing asked for confirmation before knowing whether it could issue.
+  Tapping « Émettre » read the next number and opened the sheet naming it;
+  validation only ran afterwards, in the worker. She endorsed an irreversible
+  act for a document the system already knew was invalid, then watched the
+  sheet close on an apparently unchanged screen — with no way to tell whether
+  the number had been spent. It never was, `peek_next_number` only reads the
+  counter, but nothing said so. `check_before_issue` now gates both entry
+  points: an invalid draft goes straight to the ordinary error path and the
+  sheet is never shown.
+
+- The primary action had no shape on the chrome bar in the light scheme.
+  « Émettre le devis » and « Envoyer » are `--filled`, so Rouge Enseigne #C0182B
+  on the chrome #6B1220: **1,97:1** — the very figure DESIGN cites to forbid
+  Primary as *text* on the chrome. The label stayed legible; the button stopped
+  looking like one. The fill is kept, because it is what tells the primary
+  action apart from the tonal beside it, and the shape is carried by an edge:
+  white at 12.12:1 in light, stepping aside in dark where the Rose Praliné fill
+  already clears 7.71:1. The guard now walks every variant the bar carries, in
+  both schemes, and accepts either signal — the previous one covered only the
+  variant where the bug had first appeared.
+
+- Four defects introduced by the fixes above, all found by a second critique
+  that was deliberately not told what had changed:
+  - `home-confirmation-actions` (`record.rs:428`, `468`) survived the rename to
+    `confirmation-actions`, which only touched `home.rs` and the stylesheet.
+    Measured side by side: the right class gives `display: flex`, `gap: 8px`,
+    right-aligned; the orphan gives `display: block`, 0 px apart, left-aligned —
+    in both confirmation sheets of the record screen, one of which carries a
+    destructive button.
+  - The bottom inset was counted twice on the home screen: `.screen-scroll`
+    reserved it for a screen with no chrome bar, and `.home-screen` already
+    added it on top of its 72 px of FAB clearance. Measured Δ of 72 px for 24 px
+    of inset, which made the list scroll by the inset alone. Same rule as the
+    fix that introduced it — the inset now sits only in the FAB clearance's
+    container.
+  - The preview kept a broken mirror: `.preview-screen`'s negative bottom margin
+    cancelled a `.screen-scroll` padding that had become 0, leaving an 18 px band
+    of content colour under the action bar. The margin is 0 and the comment now
+    says which padding it mirrors.
+  - The FAB's reduced-motion escape was declared 89 lines *before* the transition
+    it cancels. Equal specificity, later wins: measured `transition-duration:
+    0.2s` under « Remove animations ». Every motion escape now lives in the block
+    at the end of the file.
+
+- Two guards were rewritten because they had been written against the symptom
+  rather than the rule, and both passed while the defect was live: the FAB
+  reduced-motion test asserted that some block mentioned the selector, never
+  that it came after; the splash test counted every `document::eval` instead of
+  the playback call it was actually protecting.
+
+- The bottom system inset was counted twice, so the chrome never reached the
+  screen edge. `.screen-scroll` reserved it and `.chrome-action-bar`, one of its
+  descendants, reserved it again; a sticky bar's constraint rectangle is the
+  scrollport minus the scroll container's padding, so the bar parked
+  `18 + inset` px above the bottom. The navigation band was painted in the
+  content colour instead of the chrome, and content scrolled into it — exactly
+  what DESIGN §5 rules out. The inset now belongs to the bar when there is one
+  and to the scroll container when there is not
+  (`:not(:has(.chrome-action-bar))`), so it is counted once on that axis. A test
+  pins the invariant.
+
+- The only route to the settings once the home prompt is dismissed was a 63 × 19
+  px inline link inside the disabled-send hint — a third of the 48 dp floor. It
+  is now a full-width text button, « Ouvrir les Réglages », in white on the
+  chrome (Rouge Enseigne reads 1.97:1 there and was never an option).
+
+- « Ajoutez au moins une prestation » pointed at nothing. The message appeared
+  only in the aggregated block at the bottom of the form, while the Prestations
+  section — several screens up — kept saying « Aucune prestation pour
+  l'instant. » with no error treatment. The section now carries the message
+  itself when it is the one at fault.
+
+- Issuing a document asked nothing. It assigns the number for good, freezes the
+  document and empties the draft, and the only way back is a duplication that
+  spends another number — while deleting a single line asks twice, 400 ms
+  apart. Both entry points now open a confirmation naming what is about to
+  happen: « Émettre le devis n° 10 ? », with the rule spelled out. The number is
+  peeked through `numbering::next_number`, never reserved, so cancelling leaves
+  the counter untouched.
+
+- A new draft opened with both dates blank, and both are required. The issue
+  date now defaults to today — it is the day she writes it, and conversion and
+  duplication already date themselves that way. The event date deliberately
+  stays empty: a plausible wrong default would ship inside a document she can no
+  longer amend. `blank_draft` takes the date from its caller rather than reading
+  the clock, so the test stays deterministic.
+
+- The app menu and the FAB menu could not be dismissed by tapping beside them;
+  only choosing an entry closed them. Both now follow the same contract as the
+  form's client suggestions — any tap or scroll elsewhere in the shell closes
+  them, and the triggers stop their own taps from reaching the shell.
+
+- The home filter reset to « Tous » on every return from a document. It now
+  survives navigation for the session; a cold start still opens on everything.
+
+- The database-open failure now says what to do, and what not to do: reopen the
+  app, and do not uninstall it, since the documents live in its storage.
+
+- Tonal buttons vanished from the chrome action bar in the dark scheme.
+  `--color-primary-tint` (#3A181C) and `--color-chrome` (#4A0C16) sit at the
+  same luminance, 1.02:1, so the six actions of the record screen, the form's
+  « Aperçu » and the preview's three buttons lost their shape and left only
+  floating labels — indistinguishable from the help sentence beside them. The
+  chrome bar now carries its own pair, `--color-on-chrome-container` /
+  `--color-on-chrome-container-label`, resolving to the plain tint in light
+  (unchanged at 9.85:1) and to #B44E58 with white in the dark, which clears
+  M3's 3:1 for the fill (3.08:1) and AA for the label (5.03:1). A regression
+  test checks both ratios in both schemes.
+
+- Snackbars were painted underneath the record's action bar. They were rendered
+  after the sticky block and `.snackbar` carried no positioning of its own, so
+  « Devis n° 10 émis » and « Email envoyé » — the only confirmation either
+  action produces — landed behind it. They now sit inside the sticky block,
+  above the bar.
+
+- The catalogue chip dropped the unit its own Catalogue screen displays: the
+  same item read « 0,85 € » in the picker and « 0,85 € / pièce » in the list.
+  One formatter now serves both, and it covers the chip's accessible label too.
+  For a traiteur selling to the piece, the unit is what makes the price read.
+
+- Keyboard focus was invisible on two controls. The global `:focus-visible`
+  ring listed `button, a, input`, so the email body (`textarea`) and the
+  record's line list (`summary`, a 378×48 target) took focus with nothing to
+  show for it.
+
+- The FAB kept its plus while its menu was open — only the accessible label
+  changed. The glyph now turns a quarter, which is the whole icon since a plus
+  is symmetrical, and the rotation cuts rather than travels under
+  `prefers-reduced-motion`.
+
+- Long button labels collided at large system font scales: `.m3-button` set
+  `line-height: 1`, so « Exporter le PDF / PNG » wrapped onto two touching
+  lines around 130 %. Now `1.2`; the single-line case is unchanged, the button
+  being centred inside a min-height.
+
+- The startup database error rendered through `.startup-error`, a class with no
+  rule anywhere, on a `<p>` sitting outside `.screen` — it fell back to browser
+  defaults on an empty screen. It now uses the same `ErrorBlock` as every other
+  error path, titled « Base de données inaccessible ».
+
 - Email archive copy with a `noreply@` sender (ADR 0002): the BCC no
   longer goes to the unread `noreply@` mailbox — `archive_address`
   (domain, pure) maps `noreply@<domain>` to `contact@<domain>`, any
   other sender still archives to itself.
+
+### Removed
+
+- A second error channel that no screen ever used. `Button`, `Fab`,
+  `SegmentedButton`, `DocumentCard` and `EmptyState` each carried `error` and
+  `announce_error` props, four `.is-error` rules and a `visually-hidden`
+  `ActionErrorStatus` — complete, styled, announced, and dead. Errors go through
+  `ErrorBlock`, consistently, on every screen. Two ways to report an error is
+  worse than one, and the unused one was the one the next screen would have
+  found first. The live `.is-error` states stay: the faulty line row and the
+  bottom sheet.
+
+- « Exporter le PDF / PNG » from the record screen, with the export state it
+  carried. It wrote two files into app-private storage that no file manager can
+  open, and both « Partager » and « Envoyer » already generate whatever is
+  missing — its only visible effect was a snackbar the bar was hiding. The
+  manual export survives on the preview screen, one tap away via the summary's
+  « Aperçu », where producing a file from the document you are looking at is
+  coherent. Recovery after a failed export at issue time is unchanged
+  (« Réessayer l'export »).
+
+- The preview's « Envoyer » button, disabled since it was written and marked
+  « branché dans les tâches 26/27 » — tasks long since done. Sending belongs to
+  the record screen; a permanently greyed button taught nothing.
+
+- The bottom sheet's drag handle. In M3 the handle *is* the drag affordance and
+  these sheets are not draggable, so it promised a gesture that does not exist.
+  Dismissal is unchanged: the scrim, the Back gesture, or the sheet's own
+  cancel action.
+
+- Dead stylesheet rules (`.route-list`, `.route-link`, `.field` and its
+  children) referenced by no component, and two class names carried in RSX with
+  no rule behind them (`catalog-screen`, `outlined-field--multiline`).
 
 ### Added
 

@@ -281,10 +281,13 @@ fn playback_starts_on_mount_and_never_during_render() {
         .find("eval(START_PLAYBACK)")
         .expect("the start script must be evaluated");
 
+    // The rule is about the *player*, not about scripting in general: counting
+    // every `document::eval` guarded the symptom and broke the day the timer
+    // needed to read a media query.
     assert_eq!(
-        splash_rs.matches("document::eval").count(),
+        splash_rs.matches("eval(START_PLAYBACK)").count(),
         1,
-        "the mount handler must be the only place that runs script"
+        "the mount handler must be the only place that starts playback"
     );
     assert!(
         start > mount,
@@ -328,5 +331,57 @@ fn the_player_is_wired_to_the_bundled_assets_and_stays_silent() {
         project_file("android/MainActivity.kt")
             .contains("mediaPlaybackRequiresUserGesture = false"),
         "the WebView must allow the splash to start without a gesture"
+    );
+}
+
+/// « Remove animations » freezes the overlay on its first frame — which turns
+/// the brand beat into a plain wait, since nothing behind it is loading. The
+/// Rust timer has to take the same branch the CSS and the player already take.
+#[test]
+fn reduced_motion_shortens_the_wait_instead_of_freezing_it() {
+    let splash_rs = project_file("src/ui/splash.rs");
+
+    assert!(
+        splash_rs.contains("REDUCED_SPLASH_DURATION"),
+        "the timer must have a reduced-motion branch, not only the animations"
+    );
+    assert!(
+        splash_rs.contains("prefers-reduced-motion: reduce"),
+        "the branch must be driven by the media query itself"
+    );
+
+    let millis = |name: &str| -> u64 {
+        splash_rs
+            .split(name)
+            .nth(1)
+            .and_then(|rest| rest.split("from_millis(").nth(1))
+            .and_then(|rest| rest.split(')').next())
+            .and_then(|value| value.trim().parse().ok())
+            .unwrap_or_else(|| panic!("missing duration for {name}"))
+    };
+    let reduced = millis("const REDUCED_SPLASH_DURATION");
+    let full = millis("const SPLASH_DURATION");
+    assert!(
+        reduced < full,
+        "the reduced-motion wait ({reduced} ms) must be shorter than the full beat ({full} ms)"
+    );
+    // A splash that vanishes on the first frame reads as a glitch.
+    assert!(reduced >= 200, "too short to avoid reading as a flash");
+}
+
+/// The overlay is brand time, and nothing waits on it: a tap must end it. She
+/// opens the app several times in an evening and has seen the logo already.
+#[test]
+fn the_splash_can_be_dismissed_by_tapping_it() {
+    let splash_rs = project_file("src/ui/splash.rs");
+    let overlay = splash_rs
+        .split("class: \"splash\"")
+        .nth(1)
+        .and_then(|rest| rest.split("video {").next())
+        .expect("the overlay must exist");
+
+    assert!(
+        overlay.contains("onclick:") && overlay.contains("on_done.call(())"),
+        "tapping the overlay must dismiss it"
     );
 }

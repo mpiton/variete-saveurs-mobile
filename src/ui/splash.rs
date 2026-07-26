@@ -22,6 +22,16 @@ const SPLASH_VIDEO: Asset = asset!("/assets/splash-loop.mp4");
 /// the 2.5 s budget. Kept in step with the CSS by `tests/splash.rs`.
 const SPLASH_DURATION: Duration = Duration::from_millis(2240);
 
+/// Under « Remove animations » the overlay is a still image, so holding it for
+/// the full brand beat is just a wait. Long enough to avoid a flash, short
+/// enough not to be an obstacle.
+const REDUCED_SPLASH_DURATION: Duration = Duration::from_millis(320);
+
+/// Answers whether the system asks for reduced motion, so the Rust timer can
+/// follow the same branch the CSS and the player already take.
+const REDUCED_MOTION_QUERY: &str =
+    r#"dioxus.send(window.matchMedia("(prefers-reduced-motion: reduce)").matches)"#;
+
 /// The element carries no `autoplay` on purpose: playback starts from here, so
 /// the reduced-motion branch stays in control of it.
 ///
@@ -58,17 +68,32 @@ const START_PLAYBACK: &str = r#"
 #[component]
 pub(super) fn Splash(on_done: EventHandler<()>) -> Element {
     // The timer is deliberately independent of the player: a video that fails
-    // to load still leaves after `SPLASH_DURATION` instead of pinning the app
-    // behind a frozen overlay.
+    // to load still leaves after the delay instead of pinning the app behind a
+    // frozen overlay. If the media query cannot be read, the full beat is the
+    // safe answer — a splash that leaves too early is worse than one that stays.
     use_future(move || async move {
-        sleep(SPLASH_DURATION).await;
+        let mut reduced = document::eval(REDUCED_MOTION_QUERY);
+        let duration = match reduced.recv::<bool>().await {
+            Ok(true) => REDUCED_SPLASH_DURATION,
+            _ => SPLASH_DURATION,
+        };
+        sleep(duration).await;
         on_done.call(());
     });
 
     rsx! {
         // Decorative and transient: the home screen underneath is already
         // rendered and is what assistive technology should read.
-        div { class: "splash", aria_hidden: "true",
+        //
+        // Tapping dismisses it. Nothing waits on the overlay — the database is
+        // open before the first paint — so the beat is brand time, and brand
+        // time she has already seen a thousand times should never be a wall.
+        // No focusable control: the screen behind is live and already what
+        // assistive technology reads, and the timer covers everyone else.
+        div {
+            class: "splash",
+            aria_hidden: "true",
+            onclick: move |_| on_done.call(()),
             video {
                 class: "splash__video",
                 src: SPLASH_VIDEO,

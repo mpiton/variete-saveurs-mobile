@@ -15,17 +15,19 @@ use crate::domain::{
     db::{list_active_catalog_items, load_draft, save_draft, search_clients},
     models::{CatalogItem, ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput},
     money::{format_eur, parse_eur_to_cents},
+    numbering::next_number,
     validation::{DocumentField, MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
 };
 
 use super::{
     app::{DatabaseContext, OutsideInteraction, Route},
     components::{
-        Button, ButtonVariant, CatalogPicker, ErrorBlock, LineEditorState, LineSheet,
-        OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
+        Button, ButtonVariant, CatalogPicker, ErrorBlock, IssueConfirmSheet, LineEditorState,
+        LineSheet, OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
     },
     issue::{
-        IssueFlow, IssuePhase, blocks_draft_persistence, field_error, line_has_error, start_issue,
+        IssueFlow, IssuePhase, blocks_draft_persistence, check_before_issue, field_error,
+        line_has_error, start_issue,
     },
 };
 
@@ -42,6 +44,10 @@ pub(super) fn Form() -> Element {
     let suggestions_database = database.clone();
     let preview_database = database.clone();
     let issue_database = database.clone();
+    let number_database = database.clone();
+    // The number the emission is about to spend, held while she confirms. It is
+    // peeked, never reserved: cancelling costs nothing.
+    let mut confirm_number = use_signal(|| None::<i64>);
     let draft = use_signal(move || load_initial_draft(&initial_database));
     let edit_generation = use_signal(|| 0_u64);
     let mut save_error = use_signal(|| None::<String>);
@@ -337,7 +343,14 @@ pub(super) fn Form() -> Element {
             section { class: "form-section", aria_labelledby: "form-lines-title",
                 h2 { id: "form-lines-title", "Prestations" }
                 if current.lines.is_empty() {
-                    p { "Aucune prestation pour l’instant." }
+                    // « Ajoutez au moins une prestation » used to appear only in
+                    // the block at the very bottom, with nothing marking the
+                    // section it was about — several screens of scroll away.
+                    if let Some(message) = field_error(&issue_errors, DocumentField::Lines) {
+                        p { class: "outlined-field__error", role: "alert", "{message}" }
+                    } else {
+                        p { "Aucune prestation pour l’instant." }
+                    }
                 } else {
                     ul { class: "line-list",
                         // Index keys are acceptable here: rows are stateless
@@ -457,10 +470,20 @@ pub(super) fn Form() -> Element {
                     Button {
                         label: issue_label,
                         loading: issuing,
+                        // Émettre is the one irreversible act in the app; it
+                        // asks before spending the number, not after.
                         onclick: move |_| {
-                            let input = draft.read().clone();
-                            if let Some(input) = input {
-                                start_issue(issue_flow, issue_database.clone(), input);
+                            let Some(input) = draft.read().clone() else {
+                                return;
+                            };
+                            // Nothing is asked of her for a document that
+                            // cannot be issued: the errors surface directly.
+                            if !check_before_issue(issue_flow, &input) {
+                                return;
+                            }
+                            match peek_next_number(&number_database, &input.kind) {
+                                Ok(number) => confirm_number.set(Some(number)),
+                                Err(error) => save_error.set(Some(error)),
                             }
                         },
                     }
@@ -477,13 +500,29 @@ pub(super) fn Form() -> Element {
                 on_move_down: move |_| move_draft_line(draft, edit_generation, line_editor, false),
             }
 
+            if let Some(number) = confirm_number() {
+                IssueConfirmSheet {
+                    kind: current.kind.clone(),
+                    number,
+                    open: true,
+                    on_cancel: move |_| confirm_number.set(None),
+                    on_confirm: move |_| {
+                        confirm_number.set(None);
+                        if let Some(input) = draft.read().clone() {
+                            start_issue(issue_flow, issue_database.clone(), input);
+                        }
+                    },
+                }
+            }
+
             CatalogPicker {
                 state: catalog_picker,
+                // The sheet stays open: the picker owns its own closing now,
+                // so five items cost one visit instead of five.
                 on_pick: move |item| {
                     apply_edit(draft, edit_generation, |draft| {
                         draft.lines.push(line_from_catalog_item(&item));
                     });
-                    catalog_picker.set(None);
                 },
                 on_free_form: move |_| {
                     catalog_picker.set(None);
@@ -720,6 +759,19 @@ fn persist_draft(database: &DatabaseContext, draft: &DocumentInput) -> Result<()
     save_draft(&connection, draft, &Utc::now().to_rfc3339()).map_err(|error| {
         eprintln!("Draft auto-save failed: {error}");
         "Les modifications ne sont pas enregistrées.".to_string()
+    })
+}
+
+/// Reads the counter without touching it — the confirmation sheet needs to name
+/// the number, and a cancelled emission must leave the sequence untouched.
+fn peek_next_number(database: &DatabaseContext, kind: &DocumentKind) -> Result<i64, String> {
+    let database = database.as_ref().map_err(Clone::clone)?;
+    let connection = database
+        .lock()
+        .map_err(|_| "Impossible d’accéder aux données locales.".to_string())?;
+    next_number(&connection, kind).map_err(|error| {
+        eprintln!("Number peek failed: {error}");
+        "Impossible de lire le prochain numéro.".to_string()
     })
 }
 
