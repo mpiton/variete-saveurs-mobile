@@ -38,7 +38,7 @@ const NOTICE_DURATION: Duration = Duration::from_secs(4);
 /// Raw form state owned by the screen. The key field only ever holds a
 /// candidate replacement: the stored key is never read back into an input.
 /// No Debug derive — `new_api_key` must never reach the logs.
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct SettingsForm {
     sender_name: String,
     sender_email: String,
@@ -52,13 +52,35 @@ struct SettingsForm {
     save_error: Option<String>,
 }
 
+impl Default for SettingsForm {
+    /// The key starts revealed. Masked, the field is a `password` input, and
+    /// OEM keyboards answer that with a « clavier sécurisé » whose clipboard is
+    /// disabled — leaving a Brevo key to be typed out by hand, which nobody is
+    /// going to do. The key arrives from a password manager, by paste. What
+    /// `password` used to protect for free, `sensitive` on the field now asks
+    /// for explicitly, so masking buys nothing here beyond a shoulder to hide
+    /// from — and « Masquer la clé » is still one tap away.
+    fn default() -> Self {
+        Self {
+            sender_name: String::new(),
+            sender_email: String::new(),
+            new_api_key: String::new(),
+            editing_key: false,
+            reveal_key: true,
+            key_error: None,
+            email_error: None,
+            save_error: None,
+        }
+    }
+}
+
 impl SettingsForm {
-    /// Drop the candidate and both of its affordances once it has been stored:
-    /// a revealed field must not survive its own save.
+    /// Drop the candidate and its affordances once it has been stored, so the
+    /// next edit starts from the same state as the first one.
     fn clear_key_entry(&mut self) {
         self.new_api_key.clear();
         self.editing_key = false;
-        self.reveal_key = false;
+        self.reveal_key = Self::default().reveal_key;
     }
 }
 
@@ -501,17 +523,27 @@ mod tests {
     use super::{SettingsForm, UpdatePhase, busy, key_input_type};
 
     #[test]
-    fn the_key_field_hides_its_content_until_asked() {
-        assert_eq!(key_input_type(false), "password");
+    fn the_key_field_shows_its_content_until_masking_is_asked() {
         assert_eq!(key_input_type(true), "text");
+        assert_eq!(key_input_type(false), "password");
+    }
+
+    /// A `password` input makes OEM keyboards refuse the clipboard, and the key
+    /// is pasted from a password manager. Nothing may quietly put it back.
+    #[test]
+    fn the_key_can_be_pasted_without_touching_anything_first() {
+        assert_eq!(
+            key_input_type(SettingsForm::default().reveal_key),
+            "text",
+            "the key field must not open as a password input"
+        );
     }
 
     #[test]
-    fn a_stored_key_leaves_no_revealed_candidate_on_screen() {
+    fn a_stored_key_leaves_no_candidate_on_screen() {
         let mut form = SettingsForm {
             new_api_key: "xkeysib-candidate".to_string(),
             editing_key: true,
-            reveal_key: true,
             ..SettingsForm::default()
         };
 
@@ -519,7 +551,7 @@ mod tests {
 
         assert!(form.new_api_key.is_empty());
         assert!(!form.editing_key);
-        assert!(!form.reveal_key);
+        assert_eq!(form.reveal_key, SettingsForm::default().reveal_key);
     }
 
     /// The double-tap guard: only a running job blocks a new one. A phase left
