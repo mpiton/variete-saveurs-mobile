@@ -10,6 +10,19 @@ yanked = "deny"
 # dioxus/wry transitive tree (gtk3-rs, fxhash, paste…) is theirs to fix, not ours.
 unmaintained = "workspace"
 
+# Two `unsound` advisories show up as Dependabot alerts on the GitHub repo. Both
+# are held by dioxus 0.7.9 — `cargo update --precise` is refused — and neither
+# reaches the phone. Deliberately NOT added to `ignore`: if RustSec ever
+# reclassifies one as a vulnerability, it must break the build rather than stay
+# silently suppressed. Recheck when dioxus moves.
+#
+# RUSTSEC-2024-0429 / GHSA-wrw7-89jp-8q8g — glib 0.18.5, VariantStrIter.
+#   muda/tray-icon → gtk ^0.18. Host target only: nothing on
+#   `cargo tree --target aarch64-linux-android`, so it is not in the APK.
+# RUSTSEC-2026-0097 / GHSA-cq8v-f236-94qc — rand 0.7.3, unsound with a custom
+#   logger calling `rand::rng()`. wry → kuchikiki → selectors → phf_codegen,
+#   a [build-dependencies] edge: perfect-hash codegen at build time, not linked.
+
 [licenses]
 # devis-mobile itself is a private app (publish = false), no license required.
 private = { ignore = true }
