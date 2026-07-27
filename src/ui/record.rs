@@ -27,7 +27,7 @@ use super::{
     app::{DatabaseContext, Route},
     components::{
         BadgeKind, BottomSheet, Button, ButtonVariant, ErrorBlock, ShareSheet, Snackbar,
-        StatusBadge,
+        StatusBadge, draft_summary,
     },
     compose::SendNotice,
     issue::{ExportPhase, IssueFlow, IssuePhase, dismiss_notice, reset_issue_flow, retry_export},
@@ -108,11 +108,11 @@ pub(super) fn Record(id: i64) -> Element {
     // Conversion (task 23): `Some`-like flags for the replace-draft
     // confirmation sheet and the last conversion failure, mirroring the
     // home's new-draft flow (task 13).
-    let mut convert_confirmation = use_signal(|| false);
+    let mut convert_confirmation = use_signal(|| None::<String>);
     let mut convert_error = use_signal(|| None::<String>);
     // Duplication (task 24): same guard, but only a draft with real content
     // is confirmed away — a blank one is replaced silently.
-    let mut duplicate_confirmation = use_signal(|| false);
+    let mut duplicate_confirmation = use_signal(|| None::<String>);
     let mut duplicate_error = use_signal(|| None::<String>);
 
     // Post-issue state published by the flow: the fiche confirms the emission
@@ -285,7 +285,7 @@ pub(super) fn Record(id: i64) -> Element {
                             message,
                         }
                     }
-                    if !convert_confirmation() {
+                    if convert_confirmation().is_none() {
                         if let Some(message) = convert_error() {
                             ErrorBlock {
                                 title: "Conversion impossible".to_string(),
@@ -293,7 +293,7 @@ pub(super) fn Record(id: i64) -> Element {
                             }
                         }
                     }
-                    if !duplicate_confirmation() {
+                    if duplicate_confirmation().is_none() {
                         if let Some(message) = duplicate_error() {
                             ErrorBlock {
                                 title: "Duplication impossible".to_string(),
@@ -412,13 +412,18 @@ pub(super) fn Record(id: i64) -> Element {
                     BottomSheet {
                         id: "convert-replace-draft-sheet".to_string(),
                         title: "Remplacer le brouillon ?".to_string(),
-                        open: convert_confirmation(),
+                        open: convert_confirmation().is_some(),
                         error: convert_error().is_some(),
                         on_dismiss: move |_| {
-                            convert_confirmation.set(false);
+                            convert_confirmation.set(None);
                             convert_error.set(None);
                         },
-                        p { "Le brouillon actuel sera remplacé par la facture pré-remplie depuis ce devis." }
+                        if let Some(summary) = convert_confirmation() {
+                            p {
+                                strong { "{summary}" }
+                                " sera remplacé par la facture pré-remplie depuis ce devis, sans retour possible."
+                            }
+                        }
                         if let Some(message) = convert_error() {
                             ErrorBlock {
                                 title: "Conversion impossible".to_string(),
@@ -430,7 +435,7 @@ pub(super) fn Record(id: i64) -> Element {
                                 label: "Annuler".to_string(),
                                 variant: ButtonVariant::Text,
                                 onclick: move |_| {
-                                    convert_confirmation.set(false);
+                                    convert_confirmation.set(None);
                                     convert_error.set(None);
                                 },
                             }
@@ -440,7 +445,7 @@ pub(super) fn Record(id: i64) -> Element {
                                     convert_error.set(None);
                                     match persist_conversion(&confirm_database, &confirm_quote) {
                                         Ok(()) => {
-                                            convert_confirmation.set(false);
+                                            convert_confirmation.set(None);
                                             navigator.push(Route::Form {});
                                         }
                                         Err(message) => convert_error.set(Some(message)),
@@ -452,13 +457,18 @@ pub(super) fn Record(id: i64) -> Element {
                     BottomSheet {
                         id: "duplicate-replace-draft-sheet".to_string(),
                         title: "Remplacer le brouillon ?".to_string(),
-                        open: duplicate_confirmation(),
+                        open: duplicate_confirmation().is_some(),
                         error: duplicate_error().is_some(),
                         on_dismiss: move |_| {
-                            duplicate_confirmation.set(false);
+                            duplicate_confirmation.set(None);
                             duplicate_error.set(None);
                         },
-                        p { "Le brouillon actuel sera remplacé par une copie de ce document." }
+                        if let Some(summary) = duplicate_confirmation() {
+                            p {
+                                strong { "{summary}" }
+                                " sera remplacé par une copie de ce document, sans retour possible."
+                            }
+                        }
                         if let Some(message) = duplicate_error() {
                             ErrorBlock {
                                 title: "Duplication impossible".to_string(),
@@ -470,7 +480,7 @@ pub(super) fn Record(id: i64) -> Element {
                                 label: "Annuler".to_string(),
                                 variant: ButtonVariant::Text,
                                 onclick: move |_| {
-                                    duplicate_confirmation.set(false);
+                                    duplicate_confirmation.set(None);
                                     duplicate_error.set(None);
                                 },
                             }
@@ -483,7 +493,7 @@ pub(super) fn Record(id: i64) -> Element {
                                         &confirm_duplicate_document,
                                     ) {
                                         Ok(()) => {
-                                            duplicate_confirmation.set(false);
+                                            duplicate_confirmation.set(None);
                                             navigator.push(Route::Form {});
                                         }
                                         Err(message) => duplicate_error.set(Some(message)),
@@ -511,13 +521,13 @@ fn request_conversion(
     database: &DatabaseContext,
     quote: &Document,
     navigator: dioxus_router::Navigator,
-    mut confirmation: Signal<bool>,
+    mut confirmation: Signal<Option<String>>,
     mut error: Signal<Option<String>>,
 ) {
     error.set(None);
-    match draft_exists(database) {
-        Ok(true) => confirmation.set(true),
-        Ok(false) => match persist_conversion(database, quote) {
+    match draft_at_risk(database) {
+        Ok(Some(summary)) => confirmation.set(Some(summary)),
+        Ok(None) => match persist_conversion(database, quote) {
             Ok(()) => {
                 navigator.push(Route::Form {});
             }
@@ -535,13 +545,13 @@ fn request_duplication(
     database: &DatabaseContext,
     document: &Document,
     navigator: dioxus_router::Navigator,
-    mut confirmation: Signal<bool>,
+    mut confirmation: Signal<Option<String>>,
     mut error: Signal<Option<String>>,
 ) {
     error.set(None);
-    match filled_draft_exists(database) {
-        Ok(true) => confirmation.set(true),
-        Ok(false) => match persist_duplication(database, document) {
+    match draft_at_risk(database) {
+        Ok(Some(summary)) => confirmation.set(Some(summary)),
+        Ok(None) => match persist_duplication(database, document) {
             Ok(()) => {
                 navigator.push(Route::Form {});
             }
@@ -562,12 +572,20 @@ fn load_current_draft(database: &DatabaseContext) -> Result<Option<DocumentInput
     })
 }
 
-fn draft_exists(database: &DatabaseContext) -> Result<bool, String> {
-    load_current_draft(database).map(|draft| draft.is_some())
-}
-
-fn filled_draft_exists(database: &DatabaseContext) -> Result<bool, String> {
-    load_current_draft(database).map(|draft| draft.is_some_and(|input| !input.is_blank()))
+/// What a replace would destroy, named — or `None` when there is nothing worth
+/// asking about.
+///
+/// One rule for the three paths that overwrite the single draft slot. A blank
+/// draft (an untouched one created from home) holds nothing, so it is replaced
+/// silently; anything else is confirmed, and the confirmation can then say what
+/// it is about to lose. There is no undo anywhere in the app, so « le brouillon
+/// actuel » was the whole of what she knew about the thing she was discarding.
+fn draft_at_risk(database: &DatabaseContext) -> Result<Option<String>, String> {
+    load_current_draft(database).map(|draft| {
+        draft
+            .filter(|input| !input.is_blank())
+            .map(|input| draft_summary(&input))
+    })
 }
 
 /// Writes a pre-filled `input` into the single draft slot; the form loads it
@@ -641,7 +659,7 @@ mod tests {
     };
 
     use super::{
-        DatabaseContext, RecordError, convert_action_visible, draft_exists, filled_draft_exists,
+        DatabaseContext, RecordError, convert_action_visible, draft_at_risk, draft_summary,
         load_record, persist_conversion, persist_duplication,
     };
 
@@ -800,20 +818,20 @@ mod tests {
     }
 
     #[test]
-    fn draft_exists_tracks_the_draft_slot() {
+    fn draft_at_risk_names_the_draft_a_replace_would_destroy() {
         let (_file, database) = temp_context();
-        assert_eq!(draft_exists(&database), Ok(false));
+        assert_eq!(
+            draft_at_risk(&database),
+            Ok(None),
+            "no draft, nothing to ask"
+        );
 
-        save_draft(
-            &lock(&database),
-            &sample_input(DocumentKind::Quote),
-            "2026-07-24T09:00:00Z",
-        )
-        .expect("seed draft");
-        assert_eq!(draft_exists(&database), Ok(true));
+        let filled = sample_input(DocumentKind::Quote);
+        save_draft(&lock(&database), &filled, "2026-07-24T09:00:00Z").expect("seed draft");
+        assert_eq!(draft_at_risk(&database), Ok(Some(draft_summary(&filled))));
 
         let broken: DatabaseContext = Err("base indisponible".to_string());
-        assert!(draft_exists(&broken).is_err());
+        assert!(draft_at_risk(&broken).is_err());
     }
 
     #[test]
@@ -926,10 +944,12 @@ mod tests {
         assert_eq!(copy_record.source_quote_number, None);
     }
 
+    /// A blank draft holds nothing, so it is replaced silently — there is no
+    /// object to name, and a confirmation that names nothing is the defect this
+    /// whole change is about.
     #[test]
-    fn filled_draft_exists_ignores_a_blank_draft() {
+    fn draft_at_risk_ignores_a_blank_draft() {
         let (_file, database) = temp_context();
-        assert_eq!(filled_draft_exists(&database), Ok(false));
 
         let mut blank = sample_input(DocumentKind::Quote);
         blank.issue_date = String::new();
@@ -938,22 +958,15 @@ mod tests {
         blank.client.address = String::new();
         blank.lines.clear();
         save_draft(&lock(&database), &blank, "2026-07-24T09:00:00Z").expect("seed blank draft");
-        assert_eq!(filled_draft_exists(&database), Ok(false));
+        assert_eq!(draft_at_risk(&database), Ok(None));
 
-        save_draft(
-            &lock(&database),
-            &sample_input(DocumentKind::Quote),
-            "2026-07-24T09:05:00Z",
-        )
-        .expect("seed filled draft");
-        assert_eq!(filled_draft_exists(&database), Ok(true));
-
-        let broken: DatabaseContext = Err("base indisponible".to_string());
-        assert!(filled_draft_exists(&broken).is_err());
+        let filled = sample_input(DocumentKind::Quote);
+        save_draft(&lock(&database), &filled, "2026-07-24T09:05:00Z").expect("seed filled draft");
+        assert_eq!(draft_at_risk(&database), Ok(Some(draft_summary(&filled))));
     }
 
     #[test]
-    fn filled_draft_exists_treats_an_entered_date_as_content() {
+    fn draft_at_risk_treats_an_entered_date_as_content() {
         let (_file, database) = temp_context();
         let mut dates_only = sample_input(DocumentKind::Quote);
         dates_only.client.name = String::new();
@@ -962,7 +975,10 @@ mod tests {
         save_draft(&lock(&database), &dates_only, "2026-07-24T09:00:00Z")
             .expect("seed dates-only draft");
 
-        assert_eq!(filled_draft_exists(&database), Ok(true));
+        assert_eq!(
+            draft_at_risk(&database),
+            Ok(Some(draft_summary(&dates_only)))
+        );
     }
 
     #[test]

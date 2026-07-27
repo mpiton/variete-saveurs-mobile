@@ -1,4 +1,73 @@
 use dioxus::prelude::*;
+
+use crate::domain::{models::DocumentInput, money::format_eur};
+
+/// Names a draft in one line, for the places that offer to resume it or to
+/// destroy it.
+///
+/// The three « Remplacer le brouillon ? » sheets each described what was
+/// *arriving* and never what was leaving — the only thing actually lost, and
+/// there is no undo anywhere in the app. What identifies a draft to her is who
+/// it is for and what it comes to; the kind alone was also all the resume card
+/// showed.
+pub fn draft_summary(input: &DocumentInput) -> String {
+    let kind = input.kind.label();
+    let total = format_eur(input.total_cents());
+    let client = input.client.name.trim();
+    if client.is_empty() {
+        format!("{kind} — {total}")
+    } else {
+        format!("{kind} pour {client} — {total}")
+    }
+}
+
+#[cfg(test)]
+mod draft_summary_tests {
+    use super::draft_summary;
+    use crate::domain::models::{ClientInput, ClientKind, DocumentInput, DocumentKind, LineInput};
+
+    fn draft(name: &str) -> DocumentInput {
+        DocumentInput {
+            kind: DocumentKind::Quote,
+            issue_date: "2026-07-27".to_string(),
+            event_date: String::new(),
+            payment_terms: String::new(),
+            client: ClientInput {
+                kind: ClientKind::Individual,
+                name: name.to_string(),
+                address: String::new(),
+                email: None,
+                phone: None,
+                business_id: None,
+                billing_address: None,
+            },
+            lines: vec![LineInput {
+                group: None,
+                description: "Pains spéciaux".to_string(),
+                quantity: 10,
+                unit_price_cents: 350,
+            }],
+            source_quote_id: None,
+        }
+    }
+
+    #[test]
+    fn a_draft_is_named_by_who_it_is_for_and_what_it_comes_to() {
+        assert_eq!(
+            draft_summary(&draft("Mairie de Lyon")),
+            "Devis pour Mairie de Lyon — 35,00 €"
+        );
+    }
+
+    /// A draft created from home and left untouched has no client yet. « pour »
+    /// with nothing after it reads as a bug, so the clause goes rather than
+    /// standing empty.
+    #[test]
+    fn a_draft_without_a_client_drops_the_clause_instead_of_leaving_it_empty() {
+        assert_eq!(draft_summary(&draft("   ")), "Devis — 35,00 €");
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum BadgeKind {
     Sent,
