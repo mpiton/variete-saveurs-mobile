@@ -264,18 +264,84 @@ fn dark_palette_matches_the_design_and_meets_aa_contrast() {
     }
 }
 
+/// Body of a rule, found by its own selector on its own line — so
+/// `.m3-button--tonal` never matches `.chrome-action-bar .m3-button--tonal`.
+fn rule_block<'a>(css: &'a str, selector: &str) -> Option<&'a str> {
+    let needle = format!("\n{selector} {{\n");
+    let start = css.find(&needle)? + needle.len();
+    let end = css[start..].find('}')?;
+    Some(&css[start..start + end])
+}
+
+fn declaration<'a>(block: &'a str, property: &str) -> Option<&'a str> {
+    block.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(property)?
+            .strip_prefix(':')
+            .map(|value| value.trim().trim_end_matches(';'))
+    })
+}
+
+/// A declared value as a colour in one scheme. `transparent`, or no declaration
+/// at all, means the signal is deliberately absent and cannot carry the shape.
+fn signal<'a>(scheme: &'a str, value: Option<&str>) -> Option<&'a str> {
+    let name = value?.trim().strip_prefix("var(")?.strip_suffix(')')?;
+    let mut resolved = css_token(scheme, name.trim());
+    // Tokens alias tokens: `--color-on-chrome-primary-edge` is
+    // `var(--color-on-chrome)` in the light scheme and `transparent` in the dark.
+    for _ in 0..8 {
+        let Some(alias) = resolved
+            .strip_prefix("var(")
+            .and_then(|value| value.strip_suffix(')'))
+        else {
+            break;
+        };
+        resolved = css_token(scheme, alias.trim());
+    }
+    resolved.starts_with('#').then_some(resolved)
+}
+
+/// Every `.m3-button--<variant>` the sheet declares, so a variant added later
+/// is covered by the guard below without anyone remembering to add it.
+fn button_variants(css: &str) -> Vec<&str> {
+    let mut names: Vec<&str> = css
+        .lines()
+        .filter_map(|line| {
+            let name = line
+                .trim()
+                .strip_prefix(".m3-button--")?
+                .strip_suffix(" {")?;
+            name.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                .then_some(name)
+        })
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
 #[test]
-fn every_button_variant_on_the_chrome_bar_keeps_a_shape_in_both_schemes() {
+fn every_button_variant_keeps_a_shape_on_every_surface_it_is_posed_on() {
     let css = project_file("assets/app.css");
     let dark = dark_block(&css);
     let light = css.replace(dark, "");
 
-    // The rule is « an aplat is measured against the surface it is posed on »,
-    // and the chrome is the one surface where the two schemes diverge instead
-    // of mirroring. The first version of this guard covered only the tonal
-    // variant — the one where the bug had shown up — and the filled variant sat
-    // at 1.97:1 in the light scheme for as long as it did. So: every variant
-    // the bar carries, both schemes, and either signal may carry the shape.
+    // DESIGN.md §2 — « a control must own a signal, fill or edge, that clears
+    // 3:1 against the surface it is posed on ».
+    //
+    // This guard has now been widened twice, both times after shipping the bug
+    // it should have caught. First along the variant axis: it covered only the
+    // tonal button, the one where the defect had shown up, and the filled
+    // variant sat at 1.97:1 on the light chrome for as long as it did. Then
+    // along the host axis: it covered only the chrome bar, and the tonal and
+    // outlined variants sat between 1.04:1 and 1.53:1 on every content surface,
+    // across 19 call sites. The rule was right both times; the guard was a copy
+    // of the symptom.
+    //
+    // So it now reads the variants out of the stylesheet, resolves each one's
+    // fill and edge per scheme, and measures them against every surface the app
+    // poses a button on. Nothing here is a list of known cases.
     for selector in [
         ".chrome-action-bar .m3-button--tonal",
         ".chrome-action-bar .m3-button--filled",
@@ -283,67 +349,65 @@ fn every_button_variant_on_the_chrome_bar_keeps_a_shape_in_both_schemes() {
         assert!(css.contains(selector), "{selector} must be remapped");
     }
 
-    /// One button variant, in one scheme: name, fill, edge, label, chrome.
-    /// `None` marks a signal deliberately absent — it simply cannot be the one
-    /// carrying the shape.
-    struct Variant<'a> {
-        name: &'a str,
-        fill: Option<&'a str>,
-        edge: Option<&'a str>,
-        label: &'a str,
-        chrome: &'a str,
-    }
-
-    let cases = [
-        Variant {
-            name: "tonal/clair",
-            fill: Some(css_token(&light, "--color-primary-tint")),
-            edge: None,
-            label: css_token(&light, "--color-primary"),
-            chrome: css_token(&light, "--color-chrome"),
-        },
-        Variant {
-            name: "tonal/sombre",
-            fill: Some(css_token(dark, "--color-on-chrome-container")),
-            edge: None,
-            label: css_token(dark, "--color-on-chrome-container-label"),
-            chrome: css_token(dark, "--color-chrome"),
-        },
-        Variant {
-            name: "filled/clair",
-            fill: Some(css_token(&light, "--color-primary")),
-            edge: Some(css_token(&light, "--color-on-chrome")),
-            label: css_token(&light, "--color-on-primary"),
-            chrome: css_token(&light, "--color-chrome"),
-        },
-        Variant {
-            // The edge is `transparent` here: the fill has to stand alone.
-            name: "filled/sombre",
-            fill: Some(css_token(dark, "--color-primary")),
-            edge: None,
-            label: css_token(dark, "--color-on-primary"),
-            chrome: css_token(dark, "--color-chrome"),
-        },
+    // The bar, every card and panel, the page, and the bottom sheets.
+    const HOSTS: [&str; 4] = [
+        "--color-chrome",
+        "--color-surface",
+        "--color-bg",
+        "--color-elevated",
     ];
 
-    for case in cases {
-        // M3 asks 3:1 of whatever visual signal identifies the control. Fill or
-        // edge — one of the two has to carry it.
-        let fill_ratio = case
-            .fill
-            .map_or(0.0, |value| contrast_ratio(value, case.chrome));
-        let edge_ratio = case
-            .edge
-            .map_or(0.0, |value| contrast_ratio(value, case.chrome));
-        let name = case.name;
-        assert!(
-            fill_ratio.max(edge_ratio) >= 3.0,
-            "{name}: the button has no shape on the chrome (aplat {fill_ratio:.2}:1, bord {edge_ratio:.2}:1)"
-        );
-        // And AA of the label riding the fill.
-        if let Some(fill) = case.fill {
-            let text = contrast_ratio(case.label, fill);
-            assert!(text >= 4.5, "{name}: the label is {text:.2}:1 on its fill");
+    let variants = button_variants(&css);
+    assert!(
+        variants.len() >= 4,
+        "expected the four M3 variants, found {variants:?}"
+    );
+
+    for variant in variants {
+        let base = rule_block(&css, &format!(".m3-button--{variant}"))
+            .unwrap_or_else(|| panic!(".m3-button--{variant} must declare a rule"));
+        // On the chrome the descendant rule wins wherever it declares anything.
+        let on_chrome = rule_block(&css, &format!(".chrome-action-bar .m3-button--{variant}"));
+
+        for (scheme_name, scheme) in [("clair", light.as_str()), ("sombre", dark)] {
+            for host_token in HOSTS {
+                let host = css_token(scheme, host_token);
+                let overriding = (host_token == "--color-chrome")
+                    .then_some(on_chrome)
+                    .flatten();
+                let pick = |property| {
+                    overriding
+                        .and_then(|block| declaration(block, property))
+                        .or_else(|| declaration(base, property))
+                };
+
+                let fill = signal(scheme, pick("background"));
+                let edge = signal(scheme, pick("border-color"));
+                let where_ = format!("{variant}/{scheme_name} sur {host_token}");
+
+                // A text button owns no container at all: its affordance is the
+                // label, whose AA is checked by the palette tests. Nothing to
+                // measure, and nothing 1.4.11 asks for.
+                if fill.is_none() && edge.is_none() {
+                    continue;
+                }
+
+                let fill_ratio = fill.map_or(0.0, |value| contrast_ratio(value, host));
+                let edge_ratio = edge.map_or(0.0, |value| contrast_ratio(value, host));
+                assert!(
+                    fill_ratio.max(edge_ratio) >= 3.0,
+                    "{where_}: the button has no shape (aplat {fill_ratio:.2}:1, bord {edge_ratio:.2}:1)"
+                );
+
+                // And AA of the label riding the fill.
+                if let (Some(fill), Some(label)) = (fill, signal(scheme, pick("color"))) {
+                    let text = contrast_ratio(label, fill);
+                    assert!(
+                        text >= 4.5,
+                        "{where_}: the label is {text:.2}:1 on its fill"
+                    );
+                }
+            }
         }
     }
 }

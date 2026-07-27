@@ -184,6 +184,13 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                             message,
                         }
                     }
+                    // Before the bar, not after: rendered after it the snackbar
+                    // pushed the bar up off the bottom of the window, leaving
+                    // the navigation band in content colour. Same trap the
+                    // fiche hit and fixed (see `.record-sticky`).
+                    if let Some(message) = export_message {
+                        Snackbar { message }
+                    }
                     footer { class: "chrome-action-bar preview-action-bar",
                         if draft {
                             IssueDraftButton {
@@ -208,9 +215,6 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                             // No « Envoyer » here: sending is the fiche's, and a
                             // permanently disabled button taught nothing.
                         }
-                    }
-                    if let Some(message) = export_message {
-                        Snackbar { message }
                     }
                     ShareSheet {
                         state: share.state(),
