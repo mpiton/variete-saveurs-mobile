@@ -37,6 +37,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bindings in the APK: dioxus, tao and wry are all on 0.21, and only
   `webbrowser` pulls 0.22 today. Both move when the reason to hold them goes.
 
+- The button-shape guard reads the stylesheet instead of a list of known cases.
+  It had already been widened once, from the tonal variant to every variant on
+  the chrome bar, and it was still scoped to the bar. It now enumerates
+  `.m3-button--*` from the CSS, resolves each variant's fill and edge per
+  scheme, and measures both against every surface the app poses a button on, so
+  a variant added later is covered without anyone remembering to add it.
+  `DESIGN.md §2` and `§4` record the rule and the two traps behind it.
+
+### Fixed
+
+- Tonal and outlined buttons own a shape wherever they sit, not only on the
+  chrome bar. `DESIGN.md §2` asks every control for a fill or an edge clearing
+  3:1 against the surface under it, and the fix shipped for the bar was never
+  extended: off the bar the tonal kept the raw tint — 1.23:1 on a card, 1.08:1
+  on the cream, 1.04:1 on a dark sheet — and the outlined carried
+  `--color-border`, the §4 container rail, at 1.53:1. 19 of those two variants'
+  24 call sites had no perceptible boundary. Both now take a `primary` edge
+  (4.83 to 6.16:1 light, 7.55 to 9.31:1 dark) and keep their fill; the bar drops
+  that edge and keeps its own pair, primary being 1.97:1 on the light chrome.
+  Measured over 34 reconstructed screens in both schemes, the weakest signal in
+  the app moves from 1.04:1 to 3.08:1 — the dark chrome container hitting the
+  M3 threshold it was designed for.
+
+- The preview screen reaches the bottom of the window again. `height: 100%`
+  resolved against `.screen-scroll`'s content box, already short by the padding
+  the screen's own negative margin cancels, so the screen and its action bar
+  stopped 18px high and the Android navigation band was painted in content
+  colour — 66px once the export snackbar rendered, since it sat after the bar
+  instead of before it. `min-height: calc(100% + var(--space-lg))`, and the
+  snackbar moved ahead of the bar; measured at 915 on all three preview states,
+  both schemes.
+
+- The bottom-sheet scrim has a dark value. It was inlined as
+  `rgb(30 18 10 / 0.45)` with no token and no dark override, and that brown is
+  *lighter* than the dark page (0.0073 against 0.0061 relative luminance), so it
+  lifted what it was meant to push back. It is `--color-scrim` now, pure black
+  at 60% in the dark scheme — the same measurement that already governs the
+  shadow there.
+
 - CI gate tools bumped along with the action pin that installs them:
   cargo-llvm-cov 0.8.5 → 0.8.7, cargo-audit 0.22.0 → 0.22.2, cargo-deny
   0.19.4 → 0.20.2, `taiki-e/install-action` v2.84.0 → v2.85.2. `deny.toml`

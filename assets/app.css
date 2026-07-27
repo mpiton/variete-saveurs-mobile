@@ -44,6 +44,7 @@
        surface here; only the dark scheme actually has a step above it. */
     --color-elevated: #FFFFFF;
     --color-shadow: rgb(74 44 26 / 0.24);
+    --color-scrim: rgb(30 18 10 / 0.45);
     --color-state-pressed: rgb(74 44 26 / 0.12);
     --color-tap-highlight: rgb(192 24 43 / 0.18);
 
@@ -126,6 +127,10 @@
         --color-elevated: #2E241C;
         /* `#4A2C1A` is darker than the page, so the light shadow is inert. */
         --color-shadow: rgb(0 0 0 / 0.60);
+        /* Same measurement, same answer: `rgb(30 18 10)` is *lighter* than the
+           dark page (0.0073 against 0.0061 relative luminance), so the light
+           scrim lifts what it is supposed to push back. Pure black darkens. */
+        --color-scrim: rgb(0 0 0 / 0.60);
         /* State layers invert with the scheme: `on-surface` lightens what it
            covers. Darkening a near-black surface moves it by ~2 L*. */
         --color-state-pressed: rgb(239 229 214 / 0.14);
@@ -424,13 +429,26 @@ input[aria-busy="true"]:disabled {
     color: var(--color-on-primary);
 }
 
+/* DESIGN.md §2 — a control has to own a signal that clears 3:1 against the
+   surface it is posed on, and the tint fill is not it: 1.23:1 on `surface`,
+   1.08:1 on `bg`, 1.04:1 on a dark sheet. The fill stays, because rose on cream
+   is what makes a tonal button tonal and §2 defends that chroma gap for the
+   total pill and the « envoyé » badge; the edge carries the shape instead,
+   exactly as `--color-on-chrome-primary-edge` already does for the filled
+   variant on the bar. Primary clears 6.16:1 on `surface`, 5.42:1 on `bg`,
+   4.83:1 on `surface-dim`, and 7.55 to 9.31:1 on every dark host. */
 .m3-button--tonal {
+    border-color: var(--color-primary);
     background: var(--color-primary-tint);
     color: var(--color-primary);
 }
 
+/* Here the edge *is* the affordance, so it is the signal that has to clear
+   3:1. `--color-border` is a container rail — DESIGN.md §4 assumes it sits
+   under 3:1 in that role — and on a control it left the button at 1.53:1 on
+   `surface` and 1.34:1 on `bg`. Primary is the single interactive voice. */
 .m3-button--outlined {
-    border-color: var(--color-border);
+    border-color: var(--color-primary);
     background: var(--color-surface);
     color: var(--color-primary);
 }
@@ -758,6 +776,10 @@ input[aria-busy="true"]:disabled {
 /* Tonal buttons stand on the chrome, not on a content surface, so they take
    their container from the chrome pair rather than from `--color-primary-tint`. */
 .chrome-action-bar .m3-button--tonal {
+    /* The fill already carries the shape here — 9.85:1 light, 3.08:1 dark — so
+       the edge the variant grows on a content surface is dropped rather than
+       repainted: primary is 1.97:1 on the light chrome anyway. */
+    border-color: transparent;
     background: var(--color-on-chrome-container);
     color: var(--color-on-chrome-container-label);
 }
@@ -1001,7 +1023,7 @@ input[aria-busy="true"]:disabled {
 }
 
 .bottom-sheet-layer::backdrop {
-    background: rgb(30 18 10 / 0.45);
+    background: var(--color-scrim);
 }
 
 .bottom-sheet__scrim {
@@ -1277,7 +1299,15 @@ input[aria-busy="true"]:disabled {
    margins below mirror .screen-scroll's padding exactly and must follow it. */
 .preview-screen {
     display: flex;
-    height: 100%;
+    /* A percentage resolves against `.screen-scroll`'s *content* box, which is
+       already short by the `padding-top` the negative margin below cancels. At
+       `height: 100%` the screen therefore stopped 18px above the window, its
+       action bar with it, and those 18px of navigation band were painted in
+       content colour — the exact defeat DESIGN.md §4 describes and calls solved
+       on all seven screens. Adding back what the margin removed reaches the
+       bottom; `min-height`, like the three other screens with an action bar, so
+       taller content still grows. */
+    min-height: calc(100% + var(--space-lg));
     flex-direction: column;
     /* These negative margins cancel `.screen-scroll`'s padding exactly, so the
        A4 sheet bleeds to the edges. The bottom one is 0 because that padding is
