@@ -7,6 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `Cargo.lock` refreshed to the latest compatible versions — `cc`, `either`,
+  `foreign-types-macros`, `libc`, `rustls-pki-types`, `syn`, `thin-vec`, plus
+  three `windows-*` crates the resolver pulled in for the host build. Patch
+  bumps only, no API touched. `cargo audit` reports no vulnerability and
+  `cargo deny check` passes; the 18 advisory warnings that remain are all
+  unmaintained crates inside the dioxus/wry tree, which `deny.toml` already
+  scopes away from our direct deps.
+
+- Two major bumps are deliberately skipped, and `Cargo.toml` now says why.
+  reqwest 0.13 removes the webpki-roots feature and verifies against the device
+  trust store through `rustls-platform-verifier`, which wants a `JavaVM` handed
+  to it before the first request — `platform/mail.rs` picked baked-in roots on
+  purpose (ADR 0002), so the upgrade buys new JNI startup code and a TLS failure
+  mode that only shows up on the phone. jni 0.22 would put a second copy of the
+  bindings in the APK: dioxus, tao and wry are all on 0.21, and only
+  `webbrowser` pulls 0.22 today. Both move when the reason to hold them goes.
+
+- CI gate tools bumped along with the action pin that installs them:
+  cargo-llvm-cov 0.8.5 → 0.8.7, cargo-audit 0.22.0 → 0.22.2, cargo-deny
+  0.19.4 → 0.20.2, `taiki-e/install-action` v2.84.0 → v2.85.2. `deny.toml`
+  needed no change under 0.20, checked locally before the pin moved. The
+  `dtolnay/rust-toolchain` comment claimed a 2026-06-06 pin; the SHA next to it
+  is from 2026-07-16 and is still master, so the date was corrected rather than
+  the pin.
+
+- The coverage gate runs unconditionally. It sat behind a grep for a function
+  in `src/domain/`, because llvm-cov exits 1 when it measures nothing and the
+  directory was an empty stub — dead since task 03, and a gate whose regex
+  could quietly stop matching is worse than no guard at all.
+
+### Fixed
+
+- `CLAUDE.md` listed a coverage command that cannot run: `cargo llvm-cov
+  --fail-under-lines 85 -p devis-mobile --lib` exits with « no library targets
+  found in package `devis-mobile` », the crate being a binary. It now shows the
+  invocation CI actually uses, exclusions included.
+
+- `README.md` still said the code was arriving with the sprint. The app is on
+  the phone; the file now lists the real source layout, links the two ADRs it
+  was missing, and says plainly that the shipped APK does not come out of a `dx`
+  command. It points only at files the repo actually contains — `CLAUDE.md`,
+  `ARCHI.md` and `DESIGN.md` live in `.git/info/exclude`, so linking them from
+  the one README that *is* tracked would be a dead link for anyone but us.
+
+- `CONTRIBUTING.md` had `TODO: Add install commands` and `TODO: Add test
+  commands` where the setup belongs. With the working notes excluded from the
+  repo, that template stub was the only tracked description of how to build and
+  check this project, and it described nothing. It now carries the toolchain
+  setup and the five CI gates verbatim, plus the dependency and changelog rules
+  a PR is held to. Its « Code of Conduct » link pointed at a `CODE_OF_CONDUCT.md`
+  that was never written — the repo is public, so that was a 404 for anyone who
+  clicked it. Replaced with the two lines it would have said.
+
+- The command list in `CLAUDE.md` called `dx build --platform android --release`
+  the « APK signé à installer sur le téléphone ». Its own §Release process says
+  the opposite, and says it in bold: dx assembles the *debug* Gradle variant, so
+  that APK is `debuggable="true"` and signed with the debug keystore — installed
+  on the phone, `adb run-as` would read the accounting database and the Brevo
+  key out of it. The two sections now agree, and the command list points at the
+  `gradlew assembleRelease` sequence instead of pretending to replace it.
+
+- `dx` is pinned. The setup step said `cargo install dioxus-cli` with no version
+  while the release process reasons specifically about what dx 0.7.9 does with
+  the Gradle variant — the tool that assembles the APK was the one dependency
+  free to drift out from under its own documentation. Now `@0.7.9 --locked`,
+  matching the dioxus crate.
+
 ## [0.1.2] - 2026-07-26
 
 ### Fixed
