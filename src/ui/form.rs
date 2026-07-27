@@ -32,7 +32,7 @@ use super::{
     },
     issue::{
         IssueFlow, IssuePhase, blocks_draft_persistence, check_before_issue, field_error,
-        line_has_error, start_issue,
+        line_has_error, reveal_first_error, start_issue,
     },
 };
 
@@ -161,6 +161,16 @@ pub(super) fn Form() -> Element {
             IssuePhase::Invalid(_) | IssuePhase::Failed(_)
         ) {
             issue_flow_on_edit.0.set(IssuePhase::Idle);
+        }
+    });
+
+    // The counterpart of the effect above: that one clears the errors on the
+    // next edit, this one shows them when they arrive. It subscribes rather
+    // than peeks — it has to run *on* the transition into `Invalid`.
+    let issue_flow_on_invalid = issue_flow;
+    use_effect(move || {
+        if let IssuePhase::Invalid(errors) = &*issue_flow_on_invalid.0.read() {
+            reveal_first_error(errors);
         }
     });
 
@@ -389,6 +399,8 @@ pub(super) fn Form() -> Element {
                         for (index, line) in current.lines.iter().enumerate() {
                             li { key: "{index}",
                                 button {
+                                    // Anchor for `reveal_first_error`.
+                                    id: "form-line-{index}",
                                     class: if line_error_flags[index] {
                                         "line-row__main is-error"
                                     } else {
@@ -468,7 +480,7 @@ pub(super) fn Form() -> Element {
             }
 
             div { class: "form-sticky",
-                p { class: "total-pill", aria_live: "polite",
+                p { id: "form-total", class: "total-pill", aria_live: "polite",
                     span { class: "total-pill__label", "Total" }
                     span { class: "total-pill__amount", "{format_eur(current.total_cents())}" }
                 }

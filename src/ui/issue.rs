@@ -340,6 +340,54 @@ pub(super) fn line_has_error(errors: &[FieldError], index: usize) -> bool {
         .any(|error| error.field.line_index() == Some(index))
 }
 
+/// DOM anchor for a validation error, so the screen can take her to the field.
+///
+/// The match is exhaustive on purpose: a new `DocumentField` cannot ship
+/// without an anchor, and `every_validation_error_has_an_anchor_the_form_
+/// actually_renders` checks that the anchors still name ids the form emits.
+pub(super) fn error_anchor(field: &DocumentField) -> String {
+    match field {
+        // `OutlinedField` builds its id as `field-{name}` (`components/fields.rs`).
+        DocumentField::ClientName => "field-client-name".to_string(),
+        DocumentField::ClientAddress => "field-client-address".to_string(),
+        DocumentField::IssueDate => "field-issue-date".to_string(),
+        DocumentField::EventDate => "field-event-date".to_string(),
+        DocumentField::PaymentTerms => "field-payment-terms".to_string(),
+        DocumentField::Lines => "form-lines-title".to_string(),
+        DocumentField::LineDescription(index)
+        | DocumentField::LineQuantity(index)
+        | DocumentField::LinePrice(index) => format!("form-line-{index}"),
+        DocumentField::Total => "form-total".to_string(),
+    }
+}
+
+/// Brings the first faulty field into view and gives it focus.
+///
+/// Publishing the errors is not the same as showing them. On a five-section
+/// form she is at the bottom when she taps « Émettre » — the aggregated block
+/// renders above the action bar and the faulty fields sit further up still, so
+/// nothing moves and the tap reads as a broken app. She then taps again.
+///
+/// The scroll is instant rather than smooth: DESIGN.md §7 keeps motion for
+/// state, and an error path is the last place to make her wait for a camera
+/// move. Anchors that cannot take focus (the lines heading, the total) simply
+/// scroll; their message carries `role="alert"` and is announced anyway.
+pub(super) fn reveal_first_error(errors: &[FieldError]) {
+    let Some(error) = errors.first() else {
+        return;
+    };
+    // Built from the enum and a line index, never from typed text, so nothing
+    // of hers can reach the script.
+    let anchor = error_anchor(&error.field);
+    let _ = dioxus::document::eval(&format!(
+        "const target = document.getElementById('{anchor}');
+         if (target) {{
+             target.scrollIntoView({{ block: 'center' }});
+             target.focus({{ preventScroll: true }});
+         }}"
+    ));
+}
+
 fn update_issued(flow: IssueFlow, document_id: i64, update: impl FnOnce(&mut IssuedState)) {
     write_from_worker(flow.0, |current| {
         if let IssuePhase::Issued(state) = current {
@@ -392,7 +440,7 @@ mod tests {
 
     use super::{
         DatabaseContext, DocumentField, IssueFailure, IssuePhase, blocks_draft_persistence,
-        field_error, issue_draft, issued_notice, line_has_error,
+        error_anchor, field_error, issue_draft, issued_notice, line_has_error,
     };
     use crate::domain::{
         db::{get_document, list_documents, load_draft, open_database, save_draft},
@@ -597,5 +645,60 @@ mod tests {
             notice: None,
         }));
         assert!(blocks_draft_persistence(&issued));
+    }
+
+    #[test]
+    fn every_field_error_anchors_to_its_own_control() {
+        assert_eq!(
+            error_anchor(&DocumentField::ClientName),
+            "field-client-name"
+        );
+        assert_eq!(error_anchor(&DocumentField::IssueDate), "field-issue-date");
+        assert_eq!(error_anchor(&DocumentField::Lines), "form-lines-title");
+        assert_eq!(error_anchor(&DocumentField::LineQuantity(2)), "form-line-2");
+        assert_eq!(error_anchor(&DocumentField::Total), "form-total");
+    }
+
+    /// An anchor naming an id the form no longer emits scrolls to nothing, and
+    /// says nothing about it — the same shape as a rename that misses one file.
+    /// So the mapping is checked against the source that renders it.
+    #[test]
+    fn every_validation_error_has_an_anchor_the_form_actually_renders() {
+        const FORM: &str = include_str!("form.rs");
+        const FIELDS: &str = include_str!("components/fields.rs");
+
+        // Every `field-` anchor rests on this one format string.
+        assert!(
+            FIELDS.contains(r#"format!("field-{name}")"#),
+            "OutlinedField no longer builds its id as `field-{{name}}`"
+        );
+
+        for field in [
+            DocumentField::ClientName,
+            DocumentField::ClientAddress,
+            DocumentField::IssueDate,
+            DocumentField::EventDate,
+            DocumentField::PaymentTerms,
+            DocumentField::Lines,
+            DocumentField::LineDescription(0),
+            DocumentField::LineQuantity(0),
+            DocumentField::LinePrice(0),
+            DocumentField::Total,
+        ] {
+            let anchor = error_anchor(&field);
+            let needle = if let Some(name) = anchor.strip_prefix("field-") {
+                // The form only names the field; `OutlinedField` prefixes it.
+                format!("\"{name}\"")
+            } else if field.line_index().is_some() {
+                // Interpolated in the RSX, so match the literal as written.
+                "form-line-{index}".to_string()
+            } else {
+                anchor.clone()
+            };
+            assert!(
+                FORM.contains(&needle),
+                "{anchor}: form.rs renders no `{needle}`"
+            );
+        }
     }
 }

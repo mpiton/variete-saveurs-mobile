@@ -47,6 +47,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failed validation takes her to the first field to fix. On a five-section
+  form she taps « Émettre » from the bottom, and the aggregated block renders
+  above the action bar with the faulty fields further up still: nothing moved,
+  so the tap read as a broken app and she tapped again. The screen now scrolls
+  the first faulty anchor into view and focuses it — instantly, since an error
+  path is no place to wait for a camera move. Anchors that cannot take focus
+  (the lines heading, the total) scroll; their message already carries
+  `role="alert"`.
+
+- The draft preview no longer swallows a validation failure outright. Its
+  « Émettre » ran the same gate as the form, but that screen has neither a
+  block to show the errors in nor a field to fix, so the tap did nothing at
+  all. It goes back to the form, which shows them and reveals the first faulty
+  field on arrival.
+
 - Tonal and outlined buttons own a shape wherever they sit, not only on the
   chrome bar. `DESIGN.md §2` asks every control for a fill or an edge clearing
   3:1 against the surface under it, and the fix shipped for the bar was never
