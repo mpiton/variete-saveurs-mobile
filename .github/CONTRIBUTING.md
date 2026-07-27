@@ -53,15 +53,24 @@ dx serve --platform android
 
 ### Quality Gates
 
-The same five gates run in CI and must be green before a PR merges. No Android
-build in CI — the APK is built locally, where the signing keystore lives.
+The same five gates run in CI and all of them block a merge. No Android build in
+CI — the APK is built locally, where the signing keystore lives.
 
 ```bash
+# 1. formatting
 cargo fmt --check
+
+# 2. lints
 cargo clippy --all-targets --locked -- -D warnings
+
+# 3. tests
 cargo test --locked
+
+# 4. coverage
 cargo llvm-cov --locked --fail-under-lines 85 \
   --ignore-filename-regex 'src/(ui|platform)/|src/main\.rs|tests/'
+
+# 5. supply chain — one gate, two commands
 cargo audit        # RustSec advisories, any vulnerability fails the build
 cargo deny check   # licenses, advisories, bans, sources
 ```

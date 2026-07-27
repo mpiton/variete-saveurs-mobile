@@ -11,7 +11,7 @@ Application Android de devis et factures pour une TPE artisanale (boulangerie/tr
 
 ## Structure
 
-```
+```text
 src/domain/    logique métier, testée sur l'hôte
 src/ui/        écrans Dioxus (RSX)
 src/platform/  ponts JNI Android (fichiers, partage, PDF, mise à jour)

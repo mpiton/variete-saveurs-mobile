@@ -57,8 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commands` where the setup belongs. With the working notes excluded from the
   repo, that template stub was the only tracked description of how to build and
   check this project, and it described nothing. It now carries the toolchain
-  setup and the five CI gates verbatim, plus the dependency and changelog rules
-  a PR is held to. Its « Code of Conduct » link pointed at a `CODE_OF_CONDUCT.md`
+  setup and the five CI gates of ARCHI §8 verbatim — numbered there, since audit
+  and deny are one gate in two commands and a flat list reads as six — plus the
+  dependency and changelog rules a PR is held to. Its « Code of Conduct » link pointed at a `CODE_OF_CONDUCT.md`
   that was never written — the repo is public, so that was a 404 for anyone who
   clicked it. Replaced with the two lines it would have said.
 
