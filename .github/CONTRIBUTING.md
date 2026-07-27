@@ -37,23 +37,55 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`, `ci`
 
 ### Development Setup
 
-<!-- TODO: Add project-specific setup instructions -->
-
 ```bash
 # Clone the repo
 git clone https://github.com/mpiton/variete-saveurs-mobile.git
 cd variete-saveurs-mobile
 
-# Install dependencies
-# TODO: Add install commands
+# Toolchain — dx is pinned to the dioxus crate version, it generates the
+# Gradle project and assembles the APK
+rustup target add aarch64-linux-android
+cargo install dioxus-cli@0.7.9 --locked
 
-# Run tests
-# TODO: Add test commands
+# Run on a device or emulator
+dx serve --platform android
 ```
+
+### Quality Gates
+
+The same five gates run in CI and all of them block a merge. No Android build in
+CI — the APK is built locally, where the signing keystore lives.
+
+```bash
+# 1. formatting
+cargo fmt --check
+
+# 2. lints
+cargo clippy --all-targets --locked -- -D warnings
+
+# 3. tests
+cargo test --locked
+
+# 4. coverage
+cargo llvm-cov --locked --fail-under-lines 85 \
+  --ignore-filename-regex 'src/(ui|platform)/|src/main\.rs|tests/'
+
+# 5. supply chain — one gate, two commands
+cargo audit        # RustSec advisories, any vulnerability fails the build
+cargo deny check   # licenses, advisories, bans, sources
+```
+
+Coverage is scoped to `src/domain/`. `src/ui/` (RSX) and `src/platform/` (JNI
+bridges) are excluded and covered by a manual pass on the phone before release.
+
+A new dependency needs a justification in the PR — what it does, and which std
+or already-present crate was ruled out. Prefer `default-features = false`.
+`CHANGELOG.md` is updated in the same PR, under `[Unreleased]`.
 
 ## Code of Conduct
 
-This project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold it.
+Be decent to each other. Harassment, personal attacks and bad faith get you
+removed from the discussion, no policy document needed.
 
 ## Questions?
 
