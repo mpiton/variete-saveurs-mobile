@@ -19,7 +19,7 @@ use crate::domain::{
     duplicate::duplicate_draft_from_document,
     models::{Document, DocumentInput, DocumentKind},
     money::format_eur,
-    render::format_date,
+    render::{format_date, render_document_html},
     settings::load_email_settings,
 };
 
@@ -197,6 +197,7 @@ pub(super) fn Record(id: i64) -> Element {
             let issue_date = format_date(&input.issue_date);
             let event_date = format_date(&input.event_date);
             let total = format_eur(document.total_cents);
+            let thumbnail_html = render_document_html(input, document.number);
             let payment_terms = input.payment_terms.trim();
             let contact = [client.email.as_deref(), client.phone.as_deref()]
                 .into_iter()
@@ -227,41 +228,70 @@ pub(super) fn Record(id: i64) -> Element {
             rsx! {
                 section { class: "screen record-screen",
                     section { class: "record-summary", aria_labelledby: "record-title",
-                        div { class: "record-summary__heading",
-                            h2 { id: "record-title", "{title}" }
-                            strong { class: "record-summary__total", "{total}" }
-                        }
-                        p { class: "record-summary__client", "{client.name}" }
-                        p { class: "record-summary__detail", "{client.address}" }
-                        if !contact.is_empty() {
-                            p { class: "record-summary__detail", "{contact}" }
-                        }
-                        p { class: "record-summary__detail", "Date d’émission : {issue_date}" }
-                        p { class: "record-summary__detail", "Date de l’événement : {event_date}" }
-                        if !payment_terms.is_empty() {
-                            p { class: "record-summary__detail", "Conditions de paiement : {payment_terms}" }
-                        }
-                        if let Some(reference) = source_reference {
-                            p { class: "record-summary__source", "{reference}" }
-                        }
-                        if sent || invoiced {
-                            div { class: "record-summary__badges",
-                                if sent {
-                                    StatusBadge { kind: BadgeKind::Sent }
+                        div { class: "record-head",
+                            // The paper itself, not a stand-in for it: the same
+                            // render the preview shows, scaled down and clipped
+                            // to the head of the page — the logo, the kind and
+                            // the number, which is what identifies a document
+                            // across a year of them. Deliberately not the
+                            // exported PNG: that export runs in the background
+                            // and can fail, and the thumbnail would then be
+                            // missing exactly when it matters most.
+                            //
+                            // Inert on purpose. Its content is already on the
+                            // screen as text, and an image that looks tappable
+                            // without being tappable is a promise the app does
+                            // not keep — the filled button below is the way in.
+                            div { class: "record-thumb", aria_hidden: "true",
+                                iframe {
+                                    class: "record-thumb__frame",
+                                    title: "Aperçu réduit du document",
+                                    "sandbox": "allow-same-origin",
+                                    tabindex: "-1",
+                                    srcdoc: thumbnail_html,
                                 }
-                                if invoiced {
-                                    StatusBadge { kind: BadgeKind::Invoiced }
+                            }
+                            div { class: "record-head__identity",
+                                h2 { id: "record-title", "{title}" }
+                                p { class: "record-summary__client", "{client.name}" }
+                                strong { class: "record-summary__total", "{total}" }
+                                if sent || invoiced {
+                                    div { class: "record-summary__badges",
+                                        if sent {
+                                            StatusBadge { kind: BadgeKind::Sent }
+                                        }
+                                        if invoiced {
+                                            StatusBadge { kind: BadgeKind::Invoiced }
+                                        }
+                                    }
                                 }
                             }
                         }
-                        // « Voir le document » belongs to the document, not to
-                        // the bar of things you can do with it.
+                        // The one primary action of the screen, and it leads to
+                        // the document rather than to something you do with it.
                         Button {
-                            label: "Aperçu".to_string(),
-                            variant: ButtonVariant::Outlined,
+                            label: "Voir le document".to_string(),
                             onclick: move |_| {
                                 navigator.push(Route::Preview { document: Some(id) });
                             },
+                        }
+                        // Confirm a document once it is found; they do not help
+                        // find it, and they were eight undifferentiated lines
+                        // between her and the paper.
+                        details { class: "record-details",
+                            summary { "Détails" }
+                            p { class: "record-summary__detail", "{client.address}" }
+                            if !contact.is_empty() {
+                                p { class: "record-summary__detail", "{contact}" }
+                            }
+                            p { class: "record-summary__detail", "Date d’émission : {issue_date}" }
+                            p { class: "record-summary__detail", "Date de l’événement : {event_date}" }
+                            if !payment_terms.is_empty() {
+                                p { class: "record-summary__detail", "Conditions de paiement : {payment_terms}" }
+                            }
+                            if let Some(reference) = source_reference {
+                                p { class: "record-summary__source", "{reference}" }
+                            }
                         }
                     }
 

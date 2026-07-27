@@ -622,23 +622,56 @@ fn dark_scheme_overrides_every_light_color_token() {
     }
 }
 
+/// The record's thumbnail is the document, not a picture of it, so its content
+/// is already on the screen as text and its frame is focusable by default.
+/// Left alone it would be read twice by a screen reader and land in the tab
+/// order, and it would look tappable without being tappable.
 #[test]
-fn the_a4_preview_stays_white_in_both_schemes() {
+fn the_record_thumbnail_is_inert() {
     let css = project_file("assets/app.css");
-    // The preview is paper, not a surface: it must not follow the scheme.
-    // A single rule, so a later one cannot repaint the sheet behind this test.
-    assert_eq!(css.matches(".preview-frame").count(), 1);
-    assert!(!dark_block(&css).contains(".preview-frame"));
+    let record = project_file("src/ui/record.rs");
+    let frame = rule_block(&css, ".record-thumb__frame").expect("the frame rule must exist");
 
-    let frame = css
-        .split(".preview-frame")
-        .nth(1)
-        .and_then(|rule| rule.split('}').next())
-        .expect("the .preview-frame rule must exist");
     assert!(
-        frame.contains("background: #FFFFFF;"),
-        "the A4 sheet must stay white"
+        frame.contains("pointer-events: none;"),
+        "the thumbnail must not take taps: the button below is the way in"
     );
+    for attribute in ["aria_hidden: \"true\"", "tabindex: \"-1\""] {
+        assert!(
+            record.contains(attribute),
+            "the thumbnail must carry {attribute}"
+        );
+    }
+}
+
+#[test]
+fn every_a4_sheet_stays_white_in_both_schemes() {
+    let css = project_file("assets/app.css");
+    let dark = dark_block(&css);
+
+    // Paper, not a surface: the sheet must not follow the scheme — on the
+    // full-screen preview and on the record's thumbnail alike. The guard used
+    // to name the preview alone, and counted *mentions* of it, so a comment
+    // naming the class was enough to trip it while a second sheet added beside
+    // it went unchecked. It counts rule openings now, over every element that
+    // renders paper.
+    for selector in [".preview-frame", ".record-thumb", ".record-thumb__frame"] {
+        let opening = format!("\n{selector} {{\n");
+        assert_eq!(
+            css.matches(&opening).count(),
+            1,
+            "{selector} must be declared exactly once"
+        );
+        assert!(
+            !dark.contains(&opening),
+            "{selector} must not be repainted in the dark scheme"
+        );
+        let rule = rule_block(&css, selector).unwrap_or_else(|| panic!("{selector} must exist"));
+        assert!(
+            rule.contains("background: #FFFFFF;"),
+            "{selector} must stay white"
+        );
+    }
 }
 
 #[test]

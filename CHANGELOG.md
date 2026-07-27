@@ -51,6 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- The record leads with the document. Issuing is the one irreversible act in
+  the app, and it landed her on a summary of the fields she had just typed:
+  six undifferentiated muted lines, badges, and « Aperçu » as an outlined
+  button underneath them. `PRODUCT.md` principle 3 calls the document the
+  product, and it sat at the third level of navigation. An A4 thumbnail now
+  opens the record beside the number, the client and the total, « Voir le
+  document » is the screen's one primary action, and the metadata moves under a
+  « Détails » fold — it confirms a document once found, it does not help find
+  one. The thumbnail is the same `render_document_html` the preview shows,
+  scaled and clipped to the head of the page, deliberately not the exported
+  PNG: that export runs in the background and can fail, and the thumbnail would
+  then be missing exactly when it matters. It is inert — `aria-hidden`,
+  `tabindex="-1"`, `pointer-events: none` — because its content is already on
+  screen as text and an image that looks tappable without being tappable
+  promises a gesture the app does not have. Measured at 412×915: the head sits
+  in two columns at 100% and 130% and wraps to one at 200% system font, with no
+  horizontal overflow at any of the three.
+
 ### Fixed
 
 - The « Remplacer le brouillon ? » sheets say what they destroy. All three
