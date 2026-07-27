@@ -16,7 +16,7 @@ use crate::domain::{
 };
 
 use super::{
-    app::DatabaseContext,
+    app::{DatabaseContext, Route},
     components::{
         Button, ButtonVariant, ErrorBlock, IssueConfirmSheet, ShareSheet, Snackbar, issue_label,
     },
@@ -236,6 +236,7 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
 fn IssueDraftButton(kind: DocumentKind, number: i64, input: DocumentInput) -> Element {
     let database = use_context::<DatabaseContext>();
     let issue_flow = use_context::<IssueFlow>();
+    let navigator = use_navigator();
     let issuing = matches!(&*issue_flow.0.read(), IssuePhase::Running);
     // The preview already shows the number on the sheet; the confirmation is
     // here for the same reason as on the form — the act is irreversible.
@@ -250,6 +251,17 @@ fn IssueDraftButton(kind: DocumentKind, number: i64, input: DocumentInput) -> El
                 move |_| {
                     if check_before_issue(issue_flow, &input) {
                         confirming.set(true);
+                        return;
+                    }
+                    // The errors are published, but this screen has neither a
+                    // block to show them in nor a field to fix — the tap did
+                    // nothing at all, which is worse than the form's own
+                    // version of this bug. Both live one screen back, and the
+                    // form reveals the first faulty field on arrival.
+                    if navigator.can_go_back() {
+                        navigator.go_back();
+                    } else {
+                        navigator.push(Route::Form {});
                     }
                 }
             },
