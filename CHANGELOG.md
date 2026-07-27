@@ -51,6 +51,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- The draft screen borrows the letterhead rule from the document it produces.
+  `DESIGN.md §1` says the register is « rouge/rose/or/crème/brun partout »,
+  paper and screen alike, and gold — the hue that rules the A4 header — existed
+  nowhere in `app.css`: the app had the document's palette and none of its
+  forms. The screen title now steps up to Title Large under a 2px gold rule,
+  and the five section headings stay at Title Medium beneath it; they were all
+  the same size and weight, on the longest screen of the app. One rule, not
+  five: a mark rather than a grammar. Ornament, not information — 2.29:1 on the
+  cream where a control would owe 3:1 — and a single value serves both schemes,
+  clearing 6.57:1 on the dark surface unchanged.
+
+- `templates/document.css` and `assets/app.css` are checked against each other.
+  `DESIGN.md §2` claimed seven of the app's light tokens were Vitrine values
+  verbatim and nothing verified it, so the document could have drifted from the
+  screen that extends it without a word. The template declares eight colours;
+  the test requires every one to exist, to the digit, in the light scheme.
+  Removing `--color-gold` fails it with `#C49A45 rules the document and has no
+  token on screen`.
+
 - The record leads with the document. Issuing is the one irreversible act in
   the app, and it landed her on a summary of the fields she had just typed:
   six undifferentiated muted lines, badges, and « Aperçu » as an outlined
