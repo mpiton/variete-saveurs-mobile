@@ -45,7 +45,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a variant added later is covered without anyone remembering to add it.
   `DESIGN.md §2` and `§4` record the rule and the two traps behind it.
 
+- A blank draft is now replaced silently on all three paths that overwrite the
+  single draft slot. The duplication path already worked that way, and said why
+  in a comment; the conversion and the home « + » still asked. Confirming the
+  destruction of an empty draft is a question with nothing at stake, and it is
+  the same question that could not name its object.
+
 ### Fixed
+
+- The « Remplacer le brouillon ? » sheets say what they destroy. All three
+  described what was *arriving* — an empty document, the pre-filled invoice, a
+  copy — and never what was leaving, which is the only thing actually lost and
+  there is no undo anywhere in the app. « Le brouillon actuel » was the whole of
+  what she knew about a quote she may have spent an evening on. The sheets now
+  name it by who it is for and what it comes to (`Devis pour Mairie de Lyon —
+  340,00 €`), and say that there is no way back. Measured at 412×915 in the
+  error state, worst case: the sheet goes from 29% to 34% of the screen at
+  normal font size and from 63% to 76% at 200%, with no horizontal overflow and
+  no clipped text on a 46-character client name.
+
+- The draft resume card on the home screen names the draft too. It showed
+  « Reprendre le brouillon » and the kind, which does not tell two quotes apart.
 
 - A failed validation takes her to the first field to fix. On a five-section
   form she taps « Émettre » from the bottom, and the aggregated block renders

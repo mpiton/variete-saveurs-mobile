@@ -15,7 +15,7 @@ use super::{
     app::{DatabaseContext, OutsideInteraction, Route},
     components::{
         BottomSheet, Button, ButtonVariant, DocumentCard, EmptyState, ErrorBlock, FabMenu,
-        OutlinedField, SegmentedButton,
+        OutlinedField, SegmentedButton, draft_summary,
     },
 };
 
@@ -124,8 +124,12 @@ pub(super) fn Home() -> Element {
     };
     let searching = !search().trim().is_empty();
     let offers_search = total_documents > SEARCH_THRESHOLD;
-    let has_draft = draft.is_some();
-    let draft_kind = draft.map(|draft| document_kind_label(&draft.kind));
+    // A blank draft has nothing to lose, so it is replaced silently — the rule
+    // `request_duplication` already followed, now the same on all three paths.
+    // What is left is a confirmation that can always name what it destroys.
+    let draft_at_risk = draft.filter(|input| !input.is_blank()).map(draft_summary);
+    let has_draft = draft_at_risk.is_some();
+    let draft_label = draft.map(draft_summary);
     let documents_empty = documents.is_empty();
     let action_error_message = action_error();
     let replacement_open = pending_kind().is_some();
@@ -194,7 +198,7 @@ pub(super) fn Home() -> Element {
                         }
                     }
 
-                    if let Some(kind) = draft_kind {
+                    if let Some(label) = draft_label {
                         button {
                             class: "draft-resume-card",
                             r#type: "button",
@@ -202,7 +206,7 @@ pub(super) fn Home() -> Element {
                                 navigator.push(Route::Form {});
                             },
                             strong { "Reprendre le brouillon" }
-                            span { "{kind}" }
+                            span { "{label}" }
                         }
                     }
 
@@ -314,7 +318,12 @@ pub(super) fn Home() -> Element {
                             pending_kind.set(None);
                             action_error.set(None);
                         },
-                        p { "Le brouillon actuel sera remplacé par un document vide." }
+                        if let Some(label) = draft_at_risk.clone() {
+                            p {
+                                strong { "{label}" }
+                                " sera remplacé par un document vide, sans retour possible."
+                            }
+                        }
                         if let Some(error) = action_error_message.clone() {
                             ErrorBlock { title: "Remplacement impossible", message: error }
                         }
