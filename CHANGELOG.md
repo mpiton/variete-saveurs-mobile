@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unmaintained crates inside the dioxus/wry tree, which `deny.toml` already
   scopes away from our direct deps.
 
+- The two Dependabot alerts open on the repo are explained in `deny.toml`. Both
+  are `unsound`, not vulnerabilities, which is why `cargo audit` lets them
+  through as warnings while GitHub raises them: glib 0.18.5 (RUSTSEC-2024-0429)
+  arrives through muda/tray-icon and compiles for the Linux host only — nothing
+  on `cargo tree --target aarch64-linux-android`, so it is not in the APK — and
+  rand 0.7.3 (RUSTSEC-2026-0097) is a build-dependency of `selectors` doing
+  perfect-hash codegen, never linked. `cargo update --precise` refuses both:
+  dioxus 0.7.9 pins `gtk ^0.18` and `kuchiki =0.8.8-speedreader`. They are not
+  in `ignore` on purpose, so a reclassification would break the build instead of
+  passing unnoticed.
+
 - Two major bumps are deliberately skipped, and `Cargo.toml` now says why.
   reqwest 0.13 removes the webpki-roots feature and verifies against the device
   trust store through `rustls-platform-verifier`, which wants a `JavaVM` handed
