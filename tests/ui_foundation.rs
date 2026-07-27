@@ -596,8 +596,14 @@ fn dark_scheme_overrides_every_light_color_token() {
     let dark = dark_block(&css);
 
     // Both on-chrome colors sit on the chrome, which is dark in either
-    // scheme, and they clear AA on the darker one — no override needed.
-    const SHARED: [&str; 2] = ["--color-on-chrome", "--color-on-chrome-muted"];
+    // scheme, and they clear AA on the darker one — no override needed. Gold
+    // is the document's own, and paper does not follow the scheme: it reaches
+    // 6.57:1 on the dark surface with the light value unchanged.
+    const SHARED: [&str; 3] = [
+        "--color-on-chrome",
+        "--color-on-chrome-muted",
+        "--color-gold",
+    ];
 
     let declared = |block: &str| -> Vec<String> {
         block
@@ -618,6 +624,47 @@ fn dark_scheme_overrides_every_light_color_token() {
         assert!(
             declared(dark).contains(&token),
             "{token} keeps its light value in the dark scheme"
+        );
+    }
+}
+
+/// DESIGN.md §2 — « L'app et le document tirent des mêmes cinq teintes ; sept
+/// tokens clairs sont les valeurs Vitrine verbatim. » Nothing checked that. The
+/// document is the source, so the screen follows it: every colour the A4
+/// template declares must exist, to the digit, in the app's light scheme. A
+/// hue the document owns and the screen has no answer for is the gap this
+/// found — gold, which ruled the letterhead and appeared nowhere on screen.
+#[test]
+fn the_screen_carries_every_colour_the_document_declares() {
+    let app = project_file("assets/app.css");
+    let document = project_file("templates/document.css");
+    let dark = dark_block(&app);
+    let light = app.replace(dark, "");
+
+    let values = |css: &str, prefix: &str| -> Vec<String> {
+        css.lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                let (name, value) = line.split_once(':')?;
+                name.trim().starts_with(prefix).then(|| {
+                    value
+                        .trim()
+                        .trim_end_matches(';')
+                        .to_ascii_uppercase()
+                        .to_string()
+                })
+            })
+            .collect()
+    };
+
+    let screen = values(&light, "--color-");
+    let paper = values(&document, "--");
+    assert_eq!(paper.len(), 8, "the A4 template declares eight colours");
+
+    for colour in paper {
+        assert!(
+            screen.contains(&colour),
+            "{colour} rules the document and has no token on screen"
         );
     }
 }

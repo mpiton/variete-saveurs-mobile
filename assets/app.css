@@ -15,6 +15,13 @@
        list of documents read as one continuous block. */
     --color-border: #DCD0B8;
     --color-border-soft: #E9E1CE;
+    /* The eighth and last Vitrine hue, and the only one the screen had never
+       cashed — DESIGN.md §1 says the register is « rouge/rose/or/crème/brun
+       partout », paper and screen alike. It rules the document's letterhead and
+       now rules the draft's title. Ornament, not information: 2.29:1 on the
+       cream and 2.61:1 on a card, where a control would owe 3:1. One value for
+       both schemes — it clears 6.57:1 on the dark surface unchanged. */
+    --color-gold: #C49A45;
     /* Rouge Enseigne darkened to the tone the splash loop sits at, so the
        system window, the overlay and the top app bar are one colour. */
     --color-chrome: #6B1220;
@@ -719,6 +726,20 @@ input[aria-busy="true"]:disabled {
     min-height: 100%;
     flex-direction: column;
     gap: var(--space-md);
+}
+
+/* The letterhead, borrowed at 1:1 from `templates/document.css`: the document
+   rules its header in gold, and the screen that fills that document in owned
+   none of its forms — only its palette. The title also steps up to Title Large
+   here, because it and the five section headings were the same size and weight,
+   on the longest screen of the app.
+   One rule, under the screen title only. Five of them would be a grammar; one
+   is a mark, and the sections stay quiet so it stays legible. */
+.form-screen > h2 {
+    padding-bottom: var(--space-xs);
+    border-bottom: 2px solid var(--color-gold);
+    font-size: var(--type-title-large-size);
+    font-weight: var(--type-title-large-weight);
 }
 
 .form-section {
