@@ -191,6 +191,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The fiche appears when the document exists, not when its files do. « Émettre »
+  committed the number, cleared the draft, then compiled the PDF and rendered
+  the PNG before publishing anything — so for the length of a Typst compile
+  (~1 s) she sat on a form whose draft had already been deleted, with a spinner
+  inside a button as the only sign of life, at the one moment in the app that
+  cannot be undone. Long enough to read as a hang, and a force-close there hides
+  an emission that already happened. The emission now publishes the fiche as
+  soon as the number is committed and exports behind it, which also unsticks the
+  « Génération du PDF en cours… » line the fiche has carried since it was
+  written for this moment — it was unreachable, only a manual re-export ever set
+  that phase. A failed export and the « Devis n° 10 émis » snackbar no longer
+  land in the same frame either.
+
 - The « Remplacer le brouillon ? » sheets say what they destroy. All three
   described what was *arriving* — an empty document, the pre-filled invoice, a
   copy — and never what was leaving, which is the only thing actually lost and
