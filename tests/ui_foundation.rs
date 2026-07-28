@@ -1033,3 +1033,104 @@ fn the_android_theme_follows_the_system_scheme() {
         );
     }
 }
+
+/// A field that shows an error has to say it.
+///
+/// `OutlinedField` is the only error surface eight of the app's thirteen error
+/// bindings have: the recipient on the compose screen, the quantity and the
+/// price in the line sheet, the quantity in the catalogue picker, the name and
+/// the price in the catalogue sheet, the sender address and the Brevo key in
+/// Réglages. None of them publishes an aggregated block, and none moves the
+/// focus, so taking `role="alert"` off the component silences all eight — which
+/// is exactly what a first attempt at de-duplicating the brouillon's three
+/// announcements did.
+///
+/// The brouillon is the one screen with something better: an aggregated block
+/// listing every failure, plus `reveal_first_error` putting the focus on the
+/// first faulty control, which reads its own `aria-describedby`. So it opts out,
+/// and nothing else may.
+///
+/// Derived from the source rather than listed. A test naming the five fields
+/// that opt out today would have passed while the other eight went quiet.
+#[test]
+fn a_field_that_carries_an_error_announces_it_unless_its_screen_does_better() {
+    fn walk(directory: &Path, files: &mut Vec<std::path::PathBuf>) {
+        let entries = fs::read_dir(directory)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", directory.display()));
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, files);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    let fields = project_file("src/ui/components/fields.rs");
+
+    // Announcing is the default, so a caller that forgets the prop is audible.
+    assert!(
+        fields.contains("#[props(default = true)]\n    announce_error: bool,"),
+        "announce_error must default to true: silence has to be asked for"
+    );
+    // …and the opt-out is what removes the live region, nothing else.
+    assert_eq!(
+        fields
+            .matches("role: announce_error.then_some(\"alert\"),")
+            .count(),
+        2,
+        "both OutlinedField and OutlinedTextArea gate their alert on the prop"
+    );
+
+    let mut opted_out = Vec::new();
+    let mut sources = Vec::new();
+    walk(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src/ui"),
+        &mut sources,
+    );
+    for path in sources {
+        let source = fs::read_to_string(&path).expect("read a ui source file");
+        if source.contains("announce_error: false") {
+            opted_out.push((path, source));
+        }
+    }
+
+    assert_eq!(
+        opted_out.len(),
+        1,
+        "only the brouillon may opt out, and it is one file: {:?}",
+        opted_out.iter().map(|(path, _)| path).collect::<Vec<_>>()
+    );
+    let (path, form) = &opted_out[0];
+    assert!(
+        path.ends_with("form.rs"),
+        "the opt-out belongs to the brouillon, not to {}",
+        path.display()
+    );
+
+    // What it opts out of has to actually be there.
+    assert!(
+        form.contains("reveal_first_error"),
+        "the brouillon opts out because it moves the focus — so it must"
+    );
+    assert!(
+        form.contains("items: issue_errors"),
+        "the brouillon opts out because it publishes an aggregated block — so it must"
+    );
+    // One opt-out per field bound to that block, and not one more: a field
+    // carrying any other error would go silent with nothing covering it.
+    // Counted as lines the RSX actually emits, so the prose above explaining
+    // the opt-out is not mistaken for one.
+    let count = |source: &str, needle: &str| {
+        source
+            .lines()
+            .filter(|line| line.trim().starts_with(needle))
+            .count()
+    };
+    assert_eq!(
+        count(form, "announce_error: false"),
+        count(form, "error: field_error(&issue_errors"),
+        "every silenced field must be one the aggregated block speaks for"
+    );
+}

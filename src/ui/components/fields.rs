@@ -55,6 +55,16 @@ pub fn OutlinedField(
     #[props(default)] disabled: bool,
     #[props(default)] loading: bool,
     #[props(default)] error: Option<String>,
+    /// Whether the error message is its own live region. It is, unless the
+    /// caller already has one: the brouillon publishes an aggregated block and
+    /// moves the focus onto the first faulty field, so three announcements land
+    /// on one tap. Everywhere else — the recipient on the compose screen, the
+    /// quantity and the price in a sheet, the catalogue, the Brevo key — this
+    /// message is the only thing that speaks, and a caller that sets an error
+    /// without offering something better must not be able to silence it by
+    /// forgetting a prop.
+    #[props(default = true)]
+    announce_error: bool,
     #[props(default)] onfocus: Option<EventHandler<FocusEvent>>,
 ) -> Element {
     let input_id = field_id(&name, id_suffix.as_deref());
@@ -105,12 +115,13 @@ pub fn OutlinedField(
             if loading {
                 span { class: "spinner outlined-field__spinner", role: "status", aria_label: "Chargement" }
             }
-            // No `role="alert"`: `aria-describedby` above already ties this
-            // sentence to the input, and the aggregated block is the one live
-            // region that announces a failed validation. Two of them read the
-            // same message twice on a single tap.
             if let Some(ref message) = error {
-                p { id: error_id, class: "outlined-field__error", "{message}" }
+                p {
+                    id: error_id,
+                    class: "outlined-field__error",
+                    role: announce_error.then_some("alert"),
+                    "{message}"
+                }
             }
         }
     }
@@ -136,6 +147,9 @@ pub fn OutlinedTextArea(
     #[props(default)] placeholder: String,
     #[props(default)] disabled: bool,
     #[props(default)] error: Option<String>,
+    /// Same rule as the single-line field.
+    #[props(default = true)]
+    announce_error: bool,
 ) -> Element {
     let input_id = field_id(&name, id_suffix.as_deref());
     let error_id = format!("{input_id}-error");
@@ -156,9 +170,13 @@ pub fn OutlinedTextArea(
                 oninput: move |event| oninput.call(event),
             }
             label { r#for: input_id, "{label}" }
-            // Same rule as the single-line field: described, not announced.
             if let Some(ref message) = error {
-                p { id: error_id, class: "outlined-field__error", "{message}" }
+                p {
+                    id: error_id,
+                    class: "outlined-field__error",
+                    role: announce_error.then_some("alert"),
+                    "{message}"
+                }
             }
         }
     }
