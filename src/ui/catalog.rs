@@ -82,7 +82,11 @@ pub(super) fn Catalog() -> Element {
                             key: "{group_index}",
                             class: "catalog-group",
                             aria_labelledby: "catalog-group-{group_index}",
-                            h3 { id: "catalog-group-{group_index}", "{group.title()}" }
+                            // h2: the screen has no heading of its own, so h3
+                            // skipped a level under the bar's h1. The picker's
+                            // own groups stay h3 — they sit under a sheet title
+                            // that is already an h2.
+                            h2 { id: "catalog-group-{group_index}", "{group.title()}" }
                             ul { class: "line-list",
                                 for item in group.items {
                                     li { key: "{item.id.unwrap_or(0)}",
@@ -143,6 +147,7 @@ fn CatalogSheet(
             OutlinedField {
                 label: "Nom".to_string(),
                 name: "catalog-name".to_string(),
+                enter_key_hint: "next".to_string(),
                 value: state.name,
                 error: state.name_error,
                 oninput: move |event: FormEvent| update_editor(editor, |state| {
@@ -154,6 +159,7 @@ fn CatalogSheet(
                 OutlinedField {
                     label: "Prix unitaire".to_string(),
                     name: "catalog-price".to_string(),
+                    enter_key_hint: "next".to_string(),
                     input_mode: "decimal".to_string(),
                     placeholder: "0,00".to_string(),
                     value: state.price,
@@ -166,6 +172,7 @@ fn CatalogSheet(
                 OutlinedField {
                     label: "Unité (optionnel)".to_string(),
                     name: "catalog-unit".to_string(),
+                    enter_key_hint: "next".to_string(),
                     placeholder: "pièce".to_string(),
                     value: state.unit,
                     oninput: move |event: FormEvent| update_editor(editor, |state| {

@@ -7,7 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The search on the home screen takes a number as well as a name. Every card is
+  headlined « Devis n° 10 », the paper she is holding carries that number and a
+  client quotes it back over the phone, and it was the one handle the field
+  could not use — typing « 12 » answered « Aucune cliente de ce nom » on a
+  history that contained « Devis n° 12 ». The field is now labelled
+  « Rechercher (nom ou n°) » and its empty state says « Aucun document trouvé »,
+  because a search with two handles cannot report a nothing that names only one.
+  Digits pass through `normalize_client_search` unchanged, so the accent folding
+  that finds « Église » from « eglise » is untouched.
+
+- The IME's action key moves to the next field. Eight fields on the brouillon,
+  four on the catalogue sheet, and every one of them ended a keystroke run with
+  a keyboard that had nothing to offer but « close ». `enterkeyhint` alone would
+  have relabelled the key and moved nothing, which DESIGN.md §7 forbids, so the
+  hint travels with the behaviour: `OutlinedField` takes an `enter_key_hint`, and
+  `"next"` walks the DOM to the following field of the same screen or sheet. The
+  walk is resolved at press time rather than declared at the call site, because
+  what is rendered moves — SIRET and the billing address only exist behind the
+  « Professionnel » segment, the home search only past fifteen documents. The
+  last field of a run is left unset and closes the keyboard.
+
+### Fixed
+
+- The brouillon is written on the way out, not only every 500 ms. The debounced
+  auto-save lives on the screen's scope and Dioxus drops a scope's spawned tasks
+  when it unmounts, so leaving inside the debounce window took the last
+  keystrokes of a burst with it: Back, or the top bar's menu on the way to the
+  Catalogue. « Aperçu » was the only path that flushed, and only because it
+  needed the draft on disk for the next screen. CONTEXT.md calls the brouillon
+  « auto-sauvegardé en continu » and DESIGN.md §1 puts « la reprise sans perte »
+  above the rest; both were true within 500 ms of the last keystroke and false
+  after it. A `use_drop` now persists the draft and the half-typed line, behind
+  the same guard the debounce and « Aperçu » already carry — an issue in flight
+  owns the draft, and a late write would resurrect a document already issued.
+  `draft_to_flush` holds that decision alone so it can be tested.
+
+- A failed validation is announced once on the brouillon. The aggregated block
+  and the field's own message both carried `role="alert"`, so a single tap on
+  « Émettre » read the same sentence twice — three times counting the focus
+  `reveal_first_error` moves onto the first faulty control. The block stays the
+  live region there, since it lists everything that needs fixing, and those five
+  fields pass `announce_error: false`.
+
+  Only those five. The first attempt took the live region out of `OutlinedField`
+  itself, which silenced the eight other places that set a field error with no
+  aggregated block and no focus move behind them: the recipient on the compose
+  screen, the quantity and the price in the line sheet, the quantity in the
+  catalogue picker, the name and the price in the catalogue sheet, the sender
+  address and the Brevo key in Réglages. For all of those the message *is* the
+  announcement. `announce_error` therefore defaults to true — a caller that sets
+  an error without offering something better cannot silence it by forgetting a
+  prop.
+
+- The heading tree of the two longest screens. The bar's title is the page's
+  `h1`; the brouillon then put its own title and all four section titles at `h2`,
+  leaving nothing for TalkBack's heading navigation to descend into, and the
+  Catalogue jumped straight from `h1` to `h3`. Sections are `h3` under the
+  gold-ruled `h2` on the form, and the Catalogue's groups are `h2`. The
+  catalogue picker keeps its `h3`: it sits under a sheet title that is already an
+  `h2`. `.screen h3` shares the Title Medium rule, so nothing moves on screen.
+
 ### Changed
+
+- The logo is base64-encoded once per process instead of once per render.
+  `render_document_html` ran a byte-at-a-time encode over 180 KB of PNG on every
+  call, and the fiche calls it on every render — each snackbar tick, each share
+  phase, each confirmation sheet opening or closing. `LOGO_DATA_URI` is a
+  `LazyLock`, and the fiche's thumbnail is a `use_memo` tagged by its document
+  id, for the reason `PageCount` gives in `preview.rs`: the router leaves nowhere
+  to key `Record` by its document, and Dioxus keeps the instance alive when only
+  the route parameter changes, so an untagged cache would paint one document's
+  paper under another's number.
 
 - `Cargo.lock` refreshed to the latest compatible versions — `cc`, `either`,
   `foreign-types-macros`, `libc`, `rustls-pki-types`, `syn`, `thin-vec`, plus
