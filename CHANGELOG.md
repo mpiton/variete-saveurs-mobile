@@ -37,9 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrived together in #55 and were never read afterwards: the Codex agent roles
   and the inherited instincts describe a harness this repo does not run, and
   `.agents/skills/variete-saveurs-mobile/SKILL.md` was a stale copy of a skill
-  that has since been rewritten by hand. What the bundle was for — a
-  repo-specific skill — survives as
-  `.claude/skills/variete-saveurs-mobile/SKILL.md`, which is kept.
+  that has since been rewritten by hand.
+
+- `.claude/` is no longer tracked. What is left of it — the hand-written repo
+  skill — is a property of the machine editing this repository, not of the app
+  it builds, and there is one developer to share it with. The directory stays
+  on disk behind a `.gitignore` entry.
 
 ### Fixed
 
