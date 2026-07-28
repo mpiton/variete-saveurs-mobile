@@ -111,14 +111,19 @@ fn reveal_quantity_prompt() {
              bring();
              const viewport = window.visualViewport;
              if (!viewport) { return; }
-             // At most twice: whichever of the two fires first takes the
-             // listener away, so a keyboard that never comes costs one scroll.
+             // Once, whichever arrives first: the keyboard's resize, or the
+             // fallback for a keyboard that never comes. Each path takes the
+             // other away, so the scroll cannot land a second time on whatever
+             // has replaced the prompt by then. The timer is armed before the
+             // listener so `again` always has one to cancel.
+             let timer;
              const again = () => {
                  viewport.removeEventListener('resize', again);
+                 clearTimeout(timer);
                  bring();
              };
+             timer = setTimeout(again, 400);
              viewport.addEventListener('resize', again);
-             setTimeout(again, 400);
          })()",
     );
 }
