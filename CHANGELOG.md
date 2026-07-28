@@ -39,10 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.agents/skills/variete-saveurs-mobile/SKILL.md` was a stale copy of a skill
   that has since been rewritten by hand.
 
-- `.claude/` is no longer tracked. What is left of it — the hand-written repo
-  skill — is a property of the machine editing this repository, not of the app
-  it builds, and there is one developer to share it with. The directory stays
-  on disk behind a `.gitignore` entry.
+- `.claude/` is no longer tracked, and it is gone from disk with nothing left in
+  it worth keeping. Harness configuration is a property of the machine editing
+  this repository, not of the app it builds.
+
+  The rule that keeps a recreated one out sits in `.git/info/exclude`, not in
+  `.gitignore`: the same place `CLAUDE.md`, `ARCHI.md`, `DESIGN.md` and
+  `PRODUCT.md` already live. A committed ignore entry would publish one
+  developer's choice of tooling to a repository that has no opinion about it.
 
 ### Fixed
 
