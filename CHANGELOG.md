@@ -51,6 +51,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- Four controls whose outline was their whole affordance are visible again. The
+  inactive segment sat at 1.53:1, a catalogue chip at 1.30:1 with a fill the
+  same white as the sheet behind it, a client suggestion at 1.30:1, a FAB menu
+  item at 1.34:1 — all under the 3:1 `DESIGN.md §2` asks of a control, and all
+  missed because that rule had only ever been applied where a defect had shown
+  up. The value is chosen per element rather than uniformly: `primary` for the
+  segmented group, since the three segments draw one outline and the group is
+  the interactive object; `muted` for the chips and the suggestions, where
+  twenty red outlines would be a wall and a suggestion must not shout louder
+  than the field above it; `ink` for the FAB menu items, the same answer as
+  `.app-menu` because it is the same situation. Worst case after: 5.42:1.
+
+  The tappable containers — document card, draft card, form line, the lines
+  fold — are deliberately left at 1.30 to 1.63:1. `DESIGN.md §4` already
+  assumed that limit for the flat 1px parti, and §4 now says explicitly that it
+  covers tappable containers too, so the rule in §2 and the limit in §4 stop
+  overlapping in silence.
+
 - The top app bar's menu keeps a shape over everything it covers. It is the one
   panel that floats free — it overlaps the bar and spills onto the page and onto
   whatever card is beneath it — and the container rail left it at 1.34:1 on the
