@@ -322,7 +322,7 @@ fn a_control_that_is_only_an_outline_keeps_that_outline_visible() {
     let light = css.replace(dark, "");
 
     // (rule, the surfaces it can be posed on)
-    let cases: [(&str, &[&str]); 4] = [
+    let cases: [(&str, &[&str]); 6] = [
         // Floats over the home screen, and over a card once the list scrolls.
         (".fab-menu__item", &["--color-bg", "--color-surface"]),
         // Proposals under the client field, inside a form panel.
@@ -334,6 +334,17 @@ fn a_control_that_is_only_an_outline_keeps_that_outline_visible() {
         ),
         // A grid of them inside the catalogue sheet.
         (".catalog-chip", &["--color-elevated"]),
+        // An M3 outlined field is its outline: no fill to fall back on, since
+        // its background is the panel's own. In panels, in sheets, and — for
+        // the history search — straight on the page.
+        (
+            ".outlined-field input",
+            &["--color-surface", "--color-elevated", "--color-bg"],
+        ),
+        (
+            ".outlined-field textarea",
+            &["--color-surface", "--color-elevated"],
+        ),
     ];
 
     for (selector, hosts) in cases {

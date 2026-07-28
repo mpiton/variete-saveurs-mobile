@@ -641,11 +641,19 @@ input[aria-busy="true"]:disabled {
     padding-top: var(--space-xs);
 }
 
+/* Muted, like the suggestions that drop out of this very field. An M3 outlined
+   field *is* its outline — there is no fill to fall back on, its background is
+   the panel's own white — and the container rail left it at 1.53:1. Worse, once
+   the suggestions and the chips were raised, the field she types into all
+   evening became the faintest control on screen while the list serving it was
+   the clearest. 6.57:1 light, 7.05:1 dark, and 5.78:1 on the cream for the
+   search field that sits straight on the page. Focus and error still take over
+   the border (`primary`, `danger`), which is the point of a neutral at rest. */
 .outlined-field input {
     width: 100%;
     min-height: var(--touch-target);
     padding: 0 var(--space-md);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--color-muted);
     border-radius: var(--radius-control);
     background: var(--color-surface);
     color: var(--color-ink);
@@ -695,11 +703,13 @@ input[aria-busy="true"]:disabled {
 
 /* Multiline variant (compose screen email body, task 27): same outline and
    floating label as the single-line field, sized for a long message. */
+/* Same field, same rule, other element — the email body is no less a control
+   for being tall. */
 .outlined-field textarea {
     width: 100%;
     min-height: 12rem;
     padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--color-muted);
     border-radius: var(--radius-control);
     background: var(--color-surface);
     color: var(--color-ink);
