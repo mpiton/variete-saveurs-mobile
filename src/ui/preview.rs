@@ -30,9 +30,25 @@ use super::{
 
 const PREVIEW_GESTURES: &str = include_str!("preview_gestures.js");
 
-/// Pages the exported PDF will have, once the worker knows.
+/// The page count, and which preview it belongs to.
+///
+/// The tag is the route's own `document` — `None` is the draft. Dioxus keeps a
+/// component instance alive when only route parameters change, and the
+/// `Routable` derive leaves nowhere to key `Preview` by its document, so an
+/// untagged count could outlive the document it was computed for: shown under
+/// the wrong quote, or written by a worker that finished after the screen had
+/// moved on. No path pushes a preview from a preview today, so neither happens;
+/// the tag is what keeps that true when one is added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PageCount {
+struct PageCount {
+    document: Option<i64>,
+    pages: PageResult,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PageResult {
+    /// Nothing asked for yet — the state a fresh screen starts in.
+    Unstarted,
     Pending,
     Known(usize),
     Unavailable,
@@ -50,32 +66,53 @@ enum PageCount {
 ///
 /// It runs on the draft preview because « émis = figé »: this is the last
 /// screen where a quote that falls badly across pages can still be changed.
-fn start_page_count(count: Signal<PageCount, SyncStorage>, input: DocumentInput, number: i64) {
-    if !matches!(&*count.peek(), PageCount::Pending) {
+fn start_page_count(
+    mut count: Signal<PageCount, SyncStorage>,
+    document: Option<i64>,
+    input: DocumentInput,
+    number: i64,
+) {
+    // One worker per preview: already running or answered for this document.
+    let current = *count.peek();
+    if current.document == document && current.pages != PageResult::Unstarted {
         return;
     }
+    count.set(PageCount {
+        document,
+        pages: PageResult::Pending,
+    });
     std::thread::spawn(move || {
-        let next = match count_pdf_pages(&input, number) {
-            Ok(pages) => PageCount::Known(pages),
+        let pages = match count_pdf_pages(&input, number) {
+            Ok(pages) => PageResult::Known(pages),
             // Informational only. The export path reports its own failures in
             // French; a missing count is nothing she can act on, so it stays
             // quiet on screen and loud in the logs.
             Err(error) => {
                 eprintln!("Preview page count failed: {error}");
-                PageCount::Unavailable
+                PageResult::Unavailable
             }
         };
-        write_from_worker(count, |current| *current = next);
+        write_from_worker(count, move |current| {
+            // A worker that lands after the screen moved on is answering about
+            // a document nobody is looking at any more.
+            if current.document == document {
+                current.pages = pages;
+            }
+        });
     });
 }
 
-/// Silent until the worker answers, and silent if it fails: an absent count
-/// says nothing false, where a guessed one would.
-fn pages_label(count: PageCount) -> Option<String> {
-    match count {
-        PageCount::Known(1) => Some("1 page".to_string()),
-        PageCount::Known(pages) => Some(format!("{pages} pages")),
-        PageCount::Pending | PageCount::Unavailable => None,
+/// Silent until the worker answers, silent if it fails, and silent while it is
+/// still about the previous document: an absent count says nothing false, where
+/// a guessed or stale one would.
+fn pages_label(count: PageCount, document: Option<i64>) -> Option<String> {
+    if count.document != document {
+        return None;
+    }
+    match count.pages {
+        PageResult::Known(1) => Some("1 page".to_string()),
+        PageResult::Known(pages) => Some(format!("{pages} pages")),
+        PageResult::Unstarted | PageResult::Pending | PageResult::Unavailable => None,
     }
 }
 
@@ -158,7 +195,10 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
     let export_state = use_signal_sync(|| ExportJobState::Ready);
     let share = use_share_flow();
     use_export_notice_dismiss(export_state);
-    let page_count = use_signal_sync(|| PageCount::Pending);
+    let page_count = use_signal_sync(|| PageCount {
+        document,
+        pages: PageResult::Unstarted,
+    });
 
     // Loaded synchronously in the body; the phase signals only re-run the
     // query + render on their own transitions (identical output for a frozen
@@ -199,19 +239,18 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
             let (pdf_name, png_name) = share_file_names(&data.kind, data.number);
             let share_input = data.input.clone();
             let share_number = data.number;
-            let pages_label = pages_label(page_count());
+            // Started from the body rather than from `onmounted`: a retained
+            // instance keeps its elements mounted, so the mount handler would
+            // never fire again for a document that just changed.
+            start_page_count(page_count, document, data.input.clone(), data.number);
+            let pages_label = pages_label(page_count(), document);
             rsx! {
                 section { class: "preview-screen",
                     div {
                         class: "preview-viewport",
                         id: "preview-viewport",
-                        onmounted: {
-                            let input = data.input.clone();
-                            let number = data.number;
-                            move |_| {
-                                let _ = dioxus::document::eval(PREVIEW_GESTURES);
-                                start_page_count(page_count, input.clone(), number);
-                            }
+                        onmounted: move |_| {
+                            let _ = dioxus::document::eval(PREVIEW_GESTURES);
                         },
                         if draft {
                             p { class: "preview-pill", "Aperçu" }
@@ -509,11 +548,38 @@ mod tests {
     /// « 1 pages » on a one-page quote would undo the credit the exactness buys.
     #[test]
     fn the_page_count_is_shown_only_when_it_is_known() {
-        use super::{PageCount, pages_label};
+        use super::{PageCount, PageResult, pages_label};
 
-        assert_eq!(pages_label(PageCount::Known(1)).as_deref(), Some("1 page"));
-        assert_eq!(pages_label(PageCount::Known(3)).as_deref(), Some("3 pages"));
-        assert_eq!(pages_label(PageCount::Pending), None);
-        assert_eq!(pages_label(PageCount::Unavailable), None);
+        let about = |document, pages| PageCount { document, pages };
+
+        assert_eq!(
+            pages_label(about(Some(7), PageResult::Known(1)), Some(7)).as_deref(),
+            Some("1 page")
+        );
+        assert_eq!(
+            pages_label(about(Some(7), PageResult::Known(3)), Some(7)).as_deref(),
+            Some("3 pages")
+        );
+        assert_eq!(pages_label(about(None, PageResult::Pending), None), None);
+        assert_eq!(pages_label(about(None, PageResult::Unstarted), None), None);
+        assert_eq!(
+            pages_label(about(None, PageResult::Unavailable), None),
+            None
+        );
+    }
+
+    /// The count belongs to one preview. Shown under another document it would
+    /// be a confident wrong number on the screen that exists to be trusted.
+    #[test]
+    fn a_count_from_another_document_is_never_shown() {
+        use super::{PageCount, PageResult, pages_label};
+
+        let counted = PageCount {
+            document: Some(7),
+            pages: PageResult::Known(3),
+        };
+        assert_eq!(pages_label(counted, Some(8)), None, "another document");
+        assert_eq!(pages_label(counted, None), None, "the draft");
+        assert_eq!(pages_label(counted, Some(7)).as_deref(), Some("3 pages"));
     }
 }
