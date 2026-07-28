@@ -995,20 +995,28 @@ mod tests {
         assert_eq!(draft_at_risk(&database), Ok(Some(draft_summary(&filled))));
     }
 
+    /// The issue date is stamped by the app, the event date is chosen by her.
+    /// Only the second makes a draft worth confirming before it is replaced —
+    /// counting the first meant every freshly created draft looked like work
+    /// in progress.
     #[test]
-    fn draft_at_risk_treats_an_entered_date_as_content() {
+    fn draft_at_risk_separates_the_stamped_date_from_the_chosen_one() {
         let (_file, database) = temp_context();
-        let mut dates_only = sample_input(DocumentKind::Quote);
-        dates_only.client.name = String::new();
-        dates_only.client.address = String::new();
-        dates_only.lines.clear();
-        save_draft(&lock(&database), &dates_only, "2026-07-24T09:00:00Z")
-            .expect("seed dates-only draft");
+        let mut stamped_only = sample_input(DocumentKind::Quote);
+        stamped_only.event_date = String::new();
+        stamped_only.client.name = String::new();
+        stamped_only.client.address = String::new();
+        stamped_only.lines.clear();
+        save_draft(&lock(&database), &stamped_only, "2026-07-24T09:00:00Z")
+            .expect("seed stamped-date draft");
+        assert_eq!(draft_at_risk(&database), Ok(None));
 
-        assert_eq!(
-            draft_at_risk(&database),
-            Ok(Some(draft_summary(&dates_only)))
-        );
+        let mut chosen = stamped_only.clone();
+        chosen.event_date = "2026-08-02".to_string();
+        save_draft(&lock(&database), &chosen, "2026-07-24T09:05:00Z")
+            .expect("seed chosen-date draft");
+
+        assert_eq!(draft_at_risk(&database), Ok(Some(draft_summary(&chosen))));
     }
 
     #[test]

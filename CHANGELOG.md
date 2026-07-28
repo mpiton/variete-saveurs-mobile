@@ -204,6 +204,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that phase. A failed export and the « Devis n° 10 émis » snackbar no longer
   land in the same frame either.
 
+- A draft she never typed in is replaced without asking, as DESIGN.md §6 says.
+  The rule was there and unreachable: `is_blank` counted the issue date as
+  content, and every draft is created with today's date already stamped, so no
+  freshly opened draft was ever blank. Creating a devis, going back, then
+  creating a facture raised « Devis — 0,00 € sera remplacé par un document vide,
+  sans retour possible » over an empty document — on all three overwrite paths,
+  three times in an evening of several documents. The one sheet that has to be
+  believed was the one she was learning to dismiss, and there is no undo behind
+  it. The issue date is machine-stamped and cannot say whether she wrote
+  anything; the event date, which is always her choice, still counts. Three
+  tests changed sides, and a new one ties the two halves together — the draft
+  the home actually creates is now asserted blank, which is the check neither
+  `models.rs` nor `home.rs` was making on its own.
+
 - The « Remplacer le brouillon ? » sheets say what they destroy. All three
   described what was *arriving* — an empty document, the pre-filled invoice, a
   copy — and never what was leaving, which is the only thing actually lost and

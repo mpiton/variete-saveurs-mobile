@@ -102,14 +102,22 @@ impl DocumentInput {
             .fold(0_i64, i64::saturating_add)
     }
 
-    /// Whether the draft payload carries any user-entered content: a date,
-    /// a client detail, payment terms or a line (the home's blank draft
-    /// leaves them all empty, and only deliberate input fills them). Kind
-    /// never fills a draft — picking a kind carries no data.
+    /// Whether the draft payload carries any user-entered content: an event
+    /// date, a client detail, payment terms or a line. Kind never fills a
+    /// draft — picking a kind carries no data.
+    ///
+    /// Neither does the **issue** date, and leaving it out is the whole point
+    /// of listing the fields by hand. It is stamped with today at creation on
+    /// every path that makes a draft, so counting it as content made this
+    /// method answer `false` for the one draft it exists to recognise: the
+    /// empty one the home just opened. DESIGN.md §6's corollary — a blank
+    /// draft holds nothing to name, so it is replaced in silence — was
+    /// unreachable, and every second « + » of the evening raised a « sans
+    /// retour possible » sheet over an empty document. The event date stays in
+    /// the list: that one is always her choice.
     pub fn is_blank(&self) -> bool {
         let client = &self.client;
-        self.issue_date.trim().is_empty()
-            && self.event_date.trim().is_empty()
+        self.event_date.trim().is_empty()
             && self.payment_terms.trim().is_empty()
             && self.lines.is_empty()
             && client.name.trim().is_empty()
@@ -337,14 +345,21 @@ mod tests {
     }
 
     #[test]
-    fn an_entered_date_fills_the_draft() {
-        let mut by_issue_date = blank_input();
-        by_issue_date.issue_date = "2026-07-25".to_string();
-        assert!(!by_issue_date.is_blank());
-
+    fn an_entered_event_date_fills_the_draft() {
         let mut by_event_date = blank_input();
         by_event_date.event_date = "2026-08-02".to_string();
         assert!(!by_event_date.is_blank());
+    }
+
+    /// The regression. Every draft is created with today's issue date already
+    /// stamped, so that field cannot tell a document she wrote from one the
+    /// app just opened for her — and while it counted, no freshly created
+    /// draft was ever blank.
+    #[test]
+    fn a_stamped_issue_date_leaves_the_draft_blank() {
+        let mut by_issue_date = blank_input();
+        by_issue_date.issue_date = "2026-07-25".to_string();
+        assert!(by_issue_date.is_blank());
     }
 
     #[test]
