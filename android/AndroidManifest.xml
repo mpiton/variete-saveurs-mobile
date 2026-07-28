@@ -6,6 +6,11 @@
          the settings screen sends her there rather than let the install fail
          with no explanation. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- One 20 ms pulse when a number is spent, and nothing else. `navigator.
+         vibrate` is a silent no-op without this, so the acknowledgement in
+         `ui/components/issue_sheet.rs` would simply never happen. Normal
+         permission: no runtime prompt, no access to anything. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"

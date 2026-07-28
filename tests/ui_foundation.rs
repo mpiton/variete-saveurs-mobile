@@ -845,24 +845,57 @@ fn the_screen_carries_every_colour_the_document_declares() {
     }
 }
 
-/// The record's thumbnail is the document, not a picture of it, so its content
-/// is already on the screen as text and its frame is focusable by default.
-/// Left alone it would be read twice by a screen reader and land in the tab
-/// order, and it would look tappable without being tappable.
+/// The thumbnail leads where it looks like it leads.
+///
+/// It is a picture of the document, 72 by 102, first thing on the fiche, sitting
+/// above a button labelled « Voir le document ». It gets tapped. `DESIGN.md §7`
+/// forbids promising a gesture that does not exist, and the answer to that is to
+/// let it be tapped rather than to leave it inert.
+///
+/// The test this replaces claimed inertness and checked three strings that all
+/// survived the reversal — `pointer-events: none` on the frame, `aria_hidden`,
+/// `tabindex="-1"` — so it went green while its own subject became a control.
+/// What it should have pinned is the relationship: one destination, two ways in.
 #[test]
-fn the_record_thumbnail_is_inert() {
+fn the_record_thumbnail_opens_the_document_it_shows() {
     let css = project_file("assets/app.css");
     let record = project_file("src/ui/record.rs");
-    let frame = rule_block(&css, ".record-thumb__frame").expect("the frame rule must exist");
 
+    // Counted rather than named: however the route is written, both ways in have
+    // to be written the same, or the picture leads somewhere else than the
+    // button under it.
+    assert_eq!(
+        record
+            .matches("Route::Preview { document: Some(id) }")
+            .count(),
+        2,
+        "the thumbnail and « Voir le document » must push the same route"
+    );
+
+    let (before, after) = record
+        .split_once("class: \"record-thumb\",")
+        .expect("the fiche must render a thumbnail");
+    assert!(
+        before.trim_end().ends_with("button {"),
+        "the thumbnail must be a button: it is a picture of the document, and it reads as tappable"
+    );
+    let opening = &after[..after.find("iframe").expect("the frame sits inside it")];
+    assert!(
+        opening.contains("aria_label:") && opening.contains("onclick:"),
+        "a control needs a name and a destination, not just a border"
+    );
+
+    // The frame stays out of the way: the tap belongs to the button around it,
+    // and the button is announced once.
+    let frame = rule_block(&css, ".record-thumb__frame").expect("the frame rule must exist");
     assert!(
         frame.contains("pointer-events: none;"),
-        "the thumbnail must not take taps: the button below is the way in"
+        "the frame must not swallow the tap the button exists to receive"
     );
     for attribute in ["aria_hidden: \"true\"", "tabindex: \"-1\""] {
         assert!(
             record.contains(attribute),
-            "the thumbnail must carry {attribute}"
+            "the frame must carry {attribute}"
         );
     }
 }
@@ -1226,5 +1259,88 @@ fn back_is_only_intercepted_when_the_app_has_something_to_do_with_it() {
     assert!(
         registers < early_return,
         "the hooks must run before the early return, or their order changes when `open` flips"
+    );
+}
+
+/// The acknowledgement in the hand needs a permission to exist at all.
+///
+/// `navigator.vibrate` is a silent no-op without `android.permission.VIBRATE` —
+/// no error, no log, just nothing — so the two have to travel together. The
+/// permission is the reason to keep the call rare: one pulse, on the one act
+/// that cannot be taken back.
+#[test]
+fn the_pulse_on_emission_has_the_permission_it_needs_and_a_way_out() {
+    let manifest = project_file("android/AndroidManifest.xml");
+    let sheet = project_file("src/ui/components/issue_sheet.rs");
+
+    assert!(
+        sheet.contains("navigator.vibrate"),
+        "the emission confirms itself in the hand"
+    );
+    assert!(
+        manifest.contains("android.permission.VIBRATE"),
+        "…which does nothing at all without the permission"
+    );
+    // `navigator.vibrate` answers to no user setting of its own, so it takes the
+    // only one the web exposes.
+    assert!(
+        sheet.contains("prefers-reduced-motion: reduce"),
+        "the pulse must have the same escape every other motion in the app has"
+    );
+    // One place, one pulse: a permission is not worth spending twice. The call
+    // shape rather than the name, so the paragraph above explaining it is not
+    // counted as a second pulse.
+    assert_eq!(
+        sheet.matches("navigator.vibrate?.(").count(),
+        1,
+        "the pulse belongs to the emission and to nothing else"
+    );
+}
+
+/// The screen transition may not move anything.
+///
+/// M3 would ask for a shared axis here, and a shared axis is a `transform` — but
+/// a transformed element becomes the containing block of everything inside it,
+/// including `.form-sticky`, `.record-sticky` and `.compose-sticky`. They would
+/// come unstuck and take the chrome action bar off the bottom of the window with
+/// them, which is the one place the bar is for. Opacity is what is left.
+#[test]
+fn the_screen_transition_cannot_unstick_the_action_bars() {
+    let css = project_file("assets/app.css");
+
+    let keyframes = css
+        .split_once("@keyframes screen-in")
+        .expect("the screen transition must exist")
+        .1
+        .split_once("\n}")
+        .expect("a keyframes body")
+        .0;
+    for moving in [
+        "transform",
+        "translate",
+        "scale",
+        "rotate",
+        "inset",
+        "margin",
+    ] {
+        assert!(
+            !keyframes.contains(moving),
+            "`{moving}` in the screen transition unsticks the action bars"
+        );
+    }
+    assert!(
+        keyframes.contains("opacity"),
+        "the transition still has to be a transition"
+    );
+
+    // And it has its escape, in the block at the end of the file where every
+    // other one lives — same specificity, so only source order decides.
+    let reduced = css
+        .rsplit_once("@media (prefers-reduced-motion: reduce)")
+        .expect("the reduced-motion block must exist")
+        .1;
+    assert!(
+        reduced.contains(".preview-screen") && reduced.contains("animation: none"),
+        "« Supprimer les animations » must reach the screen transition too"
     );
 }

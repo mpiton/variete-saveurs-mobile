@@ -253,15 +253,31 @@ pub(super) fn Record(id: i64) -> Element {
                             // and can fail, and the thumbnail would then be
                             // missing exactly when it matters most.
                             //
-                            // Inert on purpose. Its content is already on the
-                            // screen as text, and an image that looks tappable
-                            // without being tappable is a promise the app does
-                            // not keep — the filled button below is the way in.
-                            div { class: "record-thumb", aria_hidden: "true",
+                            // And it opens the document, which is the only thing
+                            // a picture of the document can promise. It used to
+                            // be inert, on the argument that an image which
+                            // looks tappable without being tappable is a broken
+                            // promise — true, and the reason to make it tappable
+                            // rather than to leave it sitting there. It is 72 by
+                            // 102, first thing on the screen, above a button
+                            // labelled « Voir le document ». It gets tapped.
+                            //
+                            // Same destination as that button: two ways in, one
+                            // place. The frame keeps `pointer-events: none` so
+                            // the tap lands here, and stays out of the
+                            // accessibility tree so this button is read once.
+                            button {
+                                class: "record-thumb",
+                                r#type: "button",
+                                aria_label: "Voir le document",
+                                onclick: move |_| {
+                                    navigator.push(Route::Preview { document: Some(id) });
+                                },
                                 iframe {
                                     class: "record-thumb__frame",
                                     title: "Aperçu réduit du document",
                                     "sandbox": "allow-same-origin",
+                                    aria_hidden: "true",
                                     tabindex: "-1",
                                     srcdoc: thumbnail_html(),
                                 }

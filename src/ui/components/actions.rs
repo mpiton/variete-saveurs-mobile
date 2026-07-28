@@ -185,6 +185,31 @@ pub(super) fn LucideIcon(
     }
 }
 
+/// The top app bar's two glyphs. They were « ← » and « ⋮ », drawn by whatever
+/// the system font had: a different weight from the stroked 24px set every
+/// other icon in the app comes from, and sized off `font-size` instead of the
+/// 24px `.lucide` locks. Same family as the rest now.
+#[component]
+pub fn BackIcon() -> Element {
+    rsx! {
+        LucideIcon {
+            path { d: "m12 19-7-7 7-7" }
+            path { d: "M19 12H5" }
+        }
+    }
+}
+
+#[component]
+pub fn MenuIcon() -> Element {
+    rsx! {
+        LucideIcon {
+            circle { cx: "12", cy: "5", r: "1" }
+            circle { cx: "12", cy: "12", r: "1" }
+            circle { cx: "12", cy: "19", r: "1" }
+        }
+    }
+}
+
 #[component]
 fn PlusIcon() -> Element {
     rsx! {

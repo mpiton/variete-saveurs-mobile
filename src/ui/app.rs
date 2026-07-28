@@ -23,7 +23,7 @@ use crate::{
 
 use super::{
     catalog::Catalog,
-    components::{ErrorBlock, OpenSheets},
+    components::{BackIcon, ErrorBlock, MenuIcon, OpenSheets},
     compose::{Compose, SendNotice},
     form::Form,
     home::Home,
@@ -393,7 +393,7 @@ fn AppShell() -> Element {
                         r#type: "button",
                         aria_label: "Revenir à l’écran précédent",
                         onclick: move |_| navigator.go_back(),
-                        span { aria_hidden: "true", "←" }
+                        BackIcon {}
                     }
                 }
                 h1 { class: "top-app-bar__title", "{current_route.title()}" }
@@ -410,7 +410,7 @@ fn AppShell() -> Element {
                         event.stop_propagation();
                         menu_open.toggle();
                     },
-                    span { aria_hidden: "true", "⋮" }
+                    MenuIcon {}
                 }
                 if menu_open() {
                     nav {
