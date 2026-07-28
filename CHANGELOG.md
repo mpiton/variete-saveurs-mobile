@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   « Professionnel » segment, the home search only past fifteen documents. The
   last field of a run is left unset and closes the keyboard.
 
+### Removed
+
+- The ECC bundle, and the app that wrote it. `.claude/ecc-tools.json`,
+  `.claude/identity.json`, `.claude/homunculus/`, `.agents/` and `.codex/`
+  arrived together in #55 and were never read afterwards: the Codex agent roles
+  and the inherited instincts describe a harness this repo does not run, and
+  `.agents/skills/variete-saveurs-mobile/SKILL.md` was a stale copy of a skill
+  that has since been rewritten by hand. What the bundle was for — a
+  repo-specific skill — survives as
+  `.claude/skills/variete-saveurs-mobile/SKILL.md`, which is kept.
+
 ### Fixed
 
 - The brouillon is written on the way out, not only every 500 ms. The debounced
