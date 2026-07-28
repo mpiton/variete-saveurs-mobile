@@ -114,9 +114,18 @@ class MainActivity : WryActivity() {
                 style.setProperty('--system-inset-left', (${systemBars.left} / scale) + 'px');
                 style.setProperty('--ime-inset-bottom', (${ime.bottom} / scale) + 'px');
                 root.classList.toggle('ime-visible', $imeVisible);
+                // `nearest`, never `center`. Centring a field that sits near the
+                // top of its container asks for a scroll the container cannot
+                // give, and the engine makes up the difference by panning the
+                // visual viewport — which moves the whole window, not the
+                // scrollport. The shell went up by the status band: the screen
+                // title slid under the clock, and the action bar came off the
+                // top of the keyboard leaving a red stripe between them. It
+                // read as a broken layout and it was one scroll option.
+                // `nearest` scrolls exactly as far as it must and pans nothing.
                 requestAnimationFrame(() => requestAnimationFrame(() => {
                     if ($imeVisible && document.activeElement) {
-                        document.activeElement.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+                        document.activeElement.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
                     }
                 }));
             })();

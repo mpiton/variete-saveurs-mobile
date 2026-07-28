@@ -396,20 +396,44 @@ pub(super) fn error_anchor(field: &DocumentField) -> String {
 /// state, and an error path is the last place to make her wait for a camera
 /// move. Anchors that cannot take focus (the lines heading, the total) simply
 /// scroll; their message carries `role="alert"` and is announced anyway.
+/// « First » is the first on the page, not the first in the vector.
+/// `validate_document_fields` publishes in the order the record is stored —
+/// dates, then payment terms, then the client — while the form reads Client,
+/// Dates, Prestations, Conditions. Taking `errors.first()` sent her to « Date
+/// de l'événement » past the two client errors sitting above it, which is the
+/// opposite of what this function is for. Asking the DOM keeps the two orders
+/// independent: neither the validation nor the form has to know about the
+/// other's layout.
 pub(super) fn reveal_first_error(errors: &[FieldError]) {
-    let Some(error) = errors.first() else {
-        return;
-    };
+    if let Some(script) = reveal_script(errors) {
+        let _ = dioxus::document::eval(&script);
+    }
+}
+
+/// The script itself, so the anchor list can be asserted without a DOM.
+fn reveal_script(errors: &[FieldError]) -> Option<String> {
+    if errors.is_empty() {
+        return None;
+    }
     // Built from the enum and a line index, never from typed text, so nothing
     // of hers can reach the script.
-    let anchor = error_anchor(&error.field);
-    let _ = dioxus::document::eval(&format!(
-        "const target = document.getElementById('{anchor}');
-         if (target) {{
+    let anchors = errors
+        .iter()
+        .map(|error| format!("'{}'", error_anchor(&error.field)))
+        .collect::<Vec<_>>()
+        .join(",");
+    Some(format!(
+        "const targets = [{anchors}]
+             .map(id => document.getElementById(id))
+             .filter(Boolean);
+         if (targets.length) {{
+             const target = targets.reduce((first, other) =>
+                 first.compareDocumentPosition(other)
+                     & Node.DOCUMENT_POSITION_PRECEDING ? other : first);
              target.scrollIntoView({{ block: 'center' }});
              target.focus({{ preventScroll: true }});
          }}"
-    ));
+    ))
 }
 
 fn update_issued(flow: IssueFlow, document_id: i64, update: impl FnOnce(&mut IssuedState)) {
@@ -464,7 +488,7 @@ mod tests {
 
     use super::{
         DatabaseContext, DocumentField, IssueFailure, IssuePhase, blocks_draft_persistence,
-        error_anchor, field_error, issue_draft, issued_notice, line_has_error,
+        error_anchor, field_error, issue_draft, issued_notice, line_has_error, reveal_script,
     };
     use crate::domain::{
         db::{get_document, list_documents, load_draft, open_database, save_draft},
@@ -724,5 +748,44 @@ mod tests {
                 "{anchor}: form.rs renders no `{needle}`"
             );
         }
+    }
+
+    /// The regression this guards: the script used to carry `errors.first()`
+    /// alone. `validate_document_fields` publishes in storage order — the event
+    /// date before the client — while the form reads Client first, so the one
+    /// anchor it carried was the wrong one and focus jumped past the two client
+    /// errors above it. Every anchor has to reach the page for the DOM to pick.
+    #[test]
+    fn the_reveal_script_carries_every_anchor_and_lets_the_dom_order_them() {
+        let errors = vec![
+            FieldError {
+                field: DocumentField::EventDate,
+                message: "date".to_string(),
+            },
+            FieldError {
+                field: DocumentField::ClientName,
+                message: "nom".to_string(),
+            },
+            FieldError {
+                field: DocumentField::ClientAddress,
+                message: "adresse".to_string(),
+            },
+        ];
+
+        let script = reveal_script(&errors).expect("errors produce a script");
+
+        for error in &errors {
+            let anchor = error_anchor(&error.field);
+            assert!(script.contains(&anchor), "{anchor} never reaches the page");
+        }
+        assert!(
+            script.contains("compareDocumentPosition"),
+            "the page order decides, not the vector order"
+        );
+    }
+
+    #[test]
+    fn nothing_is_revealed_without_an_error() {
+        assert!(reveal_script(&[]).is_none());
     }
 }

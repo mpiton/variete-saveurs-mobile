@@ -340,6 +340,15 @@ html.ime-visible .screen-scroll:not(:has(.chrome-action-bar)) {
     border-bottom-width: 0;
 }
 
+/* Same rule, other half of the chrome. The action bar reserves the navigation
+   band in its own bottom padding on the four screens that have one, and it was
+   still reserving it with the keyboard up — 71px of red below the buttons,
+   above a keyboard already covering that band and painting its own. The band is
+   counted exactly once on this axis, and while the IME is up it is the IME's. */
+html.ime-visible .chrome-action-bar {
+    padding-bottom: var(--space-sm);
+}
+
 .screen {
     display: grid;
     width: min(100%, 42rem);
@@ -859,6 +868,7 @@ input[aria-busy="true"]:disabled {
 .form-sticky {
     position: sticky;
     bottom: 0;
+    z-index: 2;
     display: grid;
     gap: var(--space-sm);
     margin-top: auto;
@@ -887,8 +897,18 @@ input[aria-busy="true"]:disabled {
 }
 
 /* Chrome bottom action bar shared by the form and the preview; each screen
-   adds its own bleed and button sizing on top. */
+   adds its own bleed and button sizing on top.
+
+   Positioned, and above the field chrome. A floating label is `position:
+   absolute; z-index: 1` (`.outlined-field label`), so against a bar at
+   `z-index: auto` the label won — « Date de l'événement » painted itself on
+   top of « Aperçu » every time the keyboard shortened the window, and again at
+   200 % system font where the fields alone are tall enough to reach the bar.
+   The bar is the top bar's peer, so it takes the top bar's layer (2): above
+   content, below the menu (3), the FAB (4) and the sheets (10). */
 .chrome-action-bar {
+    position: relative;
+    z-index: 2;
     display: flex;
     gap: var(--touch-gap);
     padding:
@@ -1731,6 +1751,7 @@ input[aria-busy="true"]:disabled {
 .record-sticky {
     position: sticky;
     bottom: 0;
+    z-index: 2;
     margin-top: auto;
 }
 
@@ -1875,6 +1896,7 @@ input[aria-busy="true"]:disabled {
 .compose-sticky {
     position: sticky;
     bottom: 0;
+    z-index: 2;
     margin-top: auto;
 }
 

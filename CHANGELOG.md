@@ -67,6 +67,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The bottom chrome stays under nothing. A floating label is `position:
+  absolute; z-index: 1`; the sticky bars carried no layer at all, so the label
+  won and « Date de l'événement » painted itself over « Aperçu » — every time
+  the keyboard shortened the window, and again at 200 % system font, where the
+  fields alone are tall enough to reach the bar. The three sticky blocks and
+  `.chrome-action-bar` now take the top app bar's layer, which is what they
+  are: the other half of the same chrome, above content and below the menu,
+  the FAB and the sheets.
+
+- A failed validation goes to the first field on the *page*.
+  `validate_document_fields` publishes in storage order — dates, payment terms,
+  then the client — while the form reads Client, Dates, Prestations,
+  Conditions. `errors.first()` was therefore « Date de l'événement », and the
+  focus jumped past the two client errors sitting above it, which is the
+  opposite of what the reveal is for. Every anchor now reaches the page and the
+  DOM picks the earliest, so neither order has to know about the other.
+
+- The catalogue prompt is scrolled on the layout the keyboard leaves, not the
+  one it is about to replace. The focus that raises the keyboard came after a
+  `scrollIntoView`, so for an item low in the picker the prompt ended up behind
+  it: « Quantité » and « Ajouter » both out of reach, and a quantity typed
+  blind. It scrolls again when the viewport resizes, on the shortened viewport
+  where there is finally something to scroll.
+
+- The window stops moving when the keyboard opens. Bringing the focused field
+  into view asked for `block: 'center'`, and centring a field near the top of
+  its container asks for a scroll the container cannot give; the engine makes
+  up the difference by panning the *visual* viewport, which moves the window
+  rather than the scrollport. Everything went up by the height of the status
+  band — the screen title slid under the clock, and the action bar lifted off
+  the keyboard leaving a red stripe between the two. Measured on a Pixel 6 Pro:
+  the top app bar rendered 67px tall against the 105px it reserves. `nearest`
+  scrolls exactly as far as it must and pans nothing.
+
+- The action bar stops reserving the navigation band while the keyboard covers
+  it. `--system-inset-bottom` is in its bottom padding on the four screens that
+  have a bar, and it stayed there with the IME up — 71px of red below the
+  buttons, above a keyboard already painting that band and its own icons. The
+  rule the scroll container has had since the band was first counted now has
+  its counterpart on the bar: once on the axis, and while the keyboard is up it
+  belongs to the keyboard.
+
 - Predictive back actually runs. `DESIGN.md §5` has promised « Back système
   (geste prédictif) partout » since it was written, and the app never delivered
   it: `MainActivity` registered an `OnBackPressedCallback` enabled

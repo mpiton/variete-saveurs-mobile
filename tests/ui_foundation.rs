@@ -591,8 +591,11 @@ fn every_button_variant_keeps_a_shape_on_every_surface_it_is_posed_on() {
 #[test]
 fn the_bottom_system_inset_is_counted_once_on_its_axis() {
     let css = project_file("assets/app.css");
+    // Anchored on the start of a line, so a descendant rule ending in the same
+    // selector — `html.ime-visible .chrome-action-bar` — is not mistaken for
+    // the base one it overrides.
     let body = |selector: &str| {
-        css.split(selector)
+        css.split(&format!("\n{selector}"))
             .nth(1)
             .and_then(|rule| rule.split('}').next())
             .unwrap_or_else(|| panic!("missing rule {selector}"))
@@ -616,6 +619,14 @@ fn the_bottom_system_inset_is_counted_once_on_its_axis() {
     assert!(
         css.contains(".screen-scroll:not(:has(.chrome-action-bar))"),
         "screens without a chrome bar must reserve the navigation band"
+    );
+
+    // Once on the axis also means zero times while the keyboard is up: the IME
+    // covers the navigation band and paints its own. The bar kept reserving it
+    // anyway, which floated 71px of red between the buttons and the keyboard.
+    assert!(
+        !body("html.ime-visible .chrome-action-bar {").contains("--system-inset-bottom"),
+        "the bar must not reserve the navigation band the keyboard already covers"
     );
 }
 
