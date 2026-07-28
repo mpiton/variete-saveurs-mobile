@@ -245,8 +245,6 @@ summary:focus-visible {
     background: transparent;
     color: var(--color-on-chrome);
     cursor: pointer;
-    font-size: 1.5rem;
-    line-height: 1;
 }
 
 .icon-button:active,
@@ -347,6 +345,25 @@ html.ime-visible .screen-scroll:not(:has(.chrome-action-bar)) {
     width: min(100%, 42rem);
     gap: var(--space-md);
     margin: 0 auto;
+}
+
+/* The screen that just arrived says so, once. Motion as state (§7): a route
+   changed, and the 200ms is inside the 150-250 window.
+
+   Opacity and nothing else, deliberately. M3 would ask for a shared axis, but a
+   `transform` on this element makes it the containing block of everything
+   inside it — including `.form-sticky`, `.record-sticky` and `.compose-sticky`,
+   which would come unstuck and take the chrome action bar with them. The whole
+   point of the bar is that it stays at the bottom. */
+.screen,
+.preview-screen {
+    animation: screen-in 200ms ease-out;
+}
+
+@keyframes screen-in {
+    from {
+        opacity: 0;
+    }
 }
 
 /* Title Medium covers both levels: the heading tree exists for TalkBack, and
@@ -1593,15 +1610,29 @@ input[aria-busy="true"]:disabled {
 /* A sheet of paper, so square corners and a 1px rail — the document is the
    product (PRODUCT.md principle 3) and it belongs at the top of its own
    record, not three taps away. Clipped to the head of the page: the logo, the
-   kind and the number are what tell two documents apart a year later. */
+   kind and the number are what tell two documents apart a year later.
+
+   A button, and 72 × 102 puts it well over the 48dp floor. It carries no
+   affordance of its own beyond looking exactly like the thing it opens, which
+   is the whole point: §7 forbids promising a gesture that does not exist, and
+   the answer to a picture of the document that reads as tappable is to let it
+   be tapped. */
 .record-thumb {
     width: 72px;
     height: 102px;
     flex: none;
     overflow: hidden;
+    padding: 0;
     border: 1px solid var(--color-border);
+    border-radius: 0;
     /* Paper stays white in both schemes (DESIGN.md §2), like `.preview-frame`. */
     background: #FFFFFF;
+    cursor: pointer;
+}
+
+/* The paper does not tint — it is paper. The rail carries the press instead. */
+.record-thumb:active {
+    border-color: var(--color-primary);
 }
 
 .record-thumb__frame {
@@ -1609,9 +1640,8 @@ input[aria-busy="true"]:disabled {
     width: 210mm;
     height: 297mm;
     border: 0;
-    /* 72px over 210mm. Inert: the filled button below is the way in, and an
-       image that looks tappable without being tappable promises a gesture the
-       app does not have. */
+    /* 72px over 210mm. The frame takes no taps of its own: they belong to the
+       button around it, which is where the affordance and the label live. */
     transform: scale(0.0907);
     transform-origin: 0 0;
     background: #FFFFFF;
@@ -1915,5 +1945,11 @@ input[aria-busy="true"]:disabled {
     /* The rotation is state, not decoration: it still lands, it just cuts. */
     .fab .lucide {
         transition: none;
+    }
+
+    /* Same for the screen arriving: it arrives, it just does not fade. */
+    .screen,
+    .preview-screen {
+        animation: none;
     }
 }

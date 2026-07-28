@@ -7,7 +7,9 @@ mod issue_sheet;
 mod line_sheet;
 mod share_sheet;
 
-pub use actions::{Button, ButtonVariant, FabMenu, SegmentedButton, issue_label};
+pub use actions::{
+    BackIcon, Button, ButtonVariant, FabMenu, MenuIcon, SegmentedButton, issue_label,
+};
 pub use catalog_picker::{CatalogPicker, group_catalog_items, item_price_detail};
 pub use documents::{BadgeKind, DocumentCard, StatusBadge, draft_summary};
 pub use feedback::{BottomSheet, EmptyState, ErrorBlock, OpenSheets, Snackbar};

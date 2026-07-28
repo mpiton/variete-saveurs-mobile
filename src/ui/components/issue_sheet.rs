@@ -5,6 +5,26 @@ use crate::domain::models::DocumentKind;
 use super::actions::{Button, ButtonVariant, issue_label};
 use super::feedback::BottomSheet;
 
+/// One short pulse as the number is spent.
+///
+/// Android answers a committed action in the hand, and this is the only act in
+/// the app that cannot be taken back — the one place where feeling it land is
+/// worth more than reading about it. The snackbar that follows says the same
+/// thing to someone who is looking at the screen.
+///
+/// Behind `prefers-reduced-motion` because `navigator.vibrate` obeys no other
+/// user setting: Android's « Supprimer les animations » is the nearest signal
+/// the web gets to « moins de tout ça ». `?.` because the desktop `dx serve`
+/// has no vibrator, and neither does a phone whose owner revoked the
+/// permission.
+fn acknowledge_in_the_hand() {
+    let _ = document::eval(
+        "if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+             navigator.vibrate?.(20);
+         }",
+    );
+}
+
 /// The one confirmation the app owes her. Issuing assigns the number for good
 /// and freezes the document (`CONTEXT.md` — « un document émis n'est plus
 /// jamais modifié »); the only way back is a duplication, which spends another
@@ -38,7 +58,10 @@ pub fn IssueConfirmSheet(
                 }
                 Button {
                     label: "Émettre".to_string(),
-                    onclick: move |_| on_confirm.call(()),
+                    onclick: move |_| {
+                        acknowledge_in_the_hand();
+                        on_confirm.call(());
+                    },
                 }
             }
         }

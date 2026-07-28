@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- One short pulse when a number is spent. Émettre is the only act in the app
+  that cannot be taken back, and it was the only one that landed with nothing
+  physical to say so. It costs `android.permission.VIBRATE` — a normal
+  permission, no runtime prompt, no access to anything — and that price is the
+  reason there is exactly one call in the whole app. It sits behind
+  `prefers-reduced-motion`, because `navigator.vibrate` answers to no user
+  setting of its own and « Supprimer les animations » is the nearest thing the
+  web gets to « moins de tout ça ».
+
+- The screen that just arrived says so, once: a 200 ms fade, inside the §7
+  window for motion-as-state. Opacity and nothing else, deliberately — M3 would
+  ask for a shared axis, but a `transform` on `.screen` makes it the containing
+  block of everything inside it, and `.form-sticky`, `.record-sticky` and
+  `.compose-sticky` would come unstuck and take the chrome action bar off the
+  bottom of the window. Its escape lives with every other one, in the block at
+  the end of the stylesheet where source order is what decides.
+
 - The search on the home screen takes a number as well as a name. Every card is
   headlined « Devis n° 10 », the paper she is holding carries that number and a
   client quotes it back over the phone, and it was the one handle the field
@@ -110,6 +127,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `h2`. `.screen h3` shares the Title Medium rule, so nothing moves on screen.
 
 ### Changed
+
+- The fiche's thumbnail opens the document. It is a picture of the document, 72
+  by 102, first thing on the screen, sitting above a button labelled « Voir le
+  document » — so it gets tapped. It was inert on the argument that an image
+  which looks tappable without being tappable is a broken promise, which is the
+  argument for making it tappable, not for leaving it there. Same destination as
+  the button under it. The frame inside keeps `pointer-events: none` and stays
+  out of the accessibility tree, so the tap lands on the control and the control
+  is announced once.
+
+  The guard that was supposed to hold the old decision passed unchanged through
+  the reversal: it asserted three strings that all survived. It now pins the
+  relationship instead — one destination, reached two ways.
+
+- The top app bar's « ← » and « ⋮ » come from the lucide set like every other
+  icon in the app. They were characters drawn by whatever the system font had,
+  at a different weight from the 24px stroked set beside them, and sized off
+  `font-size` rather than the 24px `.lucide` locks.
 
 - The logo is base64-encoded once per process instead of once per render.
   `render_document_html` ran a byte-at-a-time encode over 180 KB of PNG on every
