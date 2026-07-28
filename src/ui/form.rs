@@ -21,14 +21,14 @@ use crate::domain::{
     },
     money::{format_eur, parse_eur_to_cents},
     numbering::next_number,
-    validation::{DocumentField, MAX_LINE_AMOUNT_CENTS, MAX_LINE_QUANTITY, MAX_UNIT_PRICE_CENTS},
+    validation::{DocumentField, MAX_LINE_AMOUNT_CENTS, MAX_UNIT_PRICE_CENTS},
 };
 
 use super::{
     app::{DatabaseContext, OutsideInteraction, Route},
     components::{
         Button, ButtonVariant, CatalogPicker, ErrorBlock, IssueConfirmSheet, LineEditorState,
-        LineSheet, OutlinedField, SegmentedButton, issue_label, line_from_catalog_item,
+        LineSheet, OutlinedField, SegmentedButton, issue_label, parse_quantity, quantity_error,
     },
     issue::{
         IssueFlow, IssuePhase, blocks_draft_persistence, check_before_issue, field_error,
@@ -560,9 +560,11 @@ pub(super) fn Form() -> Element {
                 state: catalog_picker,
                 // The sheet stays open: the picker owns its own closing now,
                 // so five items cost one visit instead of five.
-                on_pick: move |item| {
-                    apply_edit(draft, edit_generation, |draft| {
-                        draft.lines.push(line_from_catalog_item(&item));
+                // The picker builds the whole line now — it is where the
+                // quantity is said, so it is where the line is made.
+                on_pick: move |line: LineInput| {
+                    apply_edit(draft, edit_generation, move |draft| {
+                        draft.lines.push(line);
                     });
                 },
                 on_free_form: move |_| {
@@ -864,25 +866,6 @@ fn client_kind_for_index(index: usize) -> ClientKind {
 fn optional_text(value: &str) -> Option<String> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
-/// Strict integer shape (digits only, like the desktop form) — range checks
-/// stay with the domain validation.
-fn parse_quantity(value: &str) -> Option<i64> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    trimmed.parse().ok()
-}
-
-fn quantity_error(parsed: Option<i64>) -> Option<String> {
-    match parsed {
-        Some(quantity) if (1..=MAX_LINE_QUANTITY).contains(&quantity) => None,
-        Some(0) => Some("La quantité doit être positive.".to_string()),
-        Some(_) => Some("La quantité dépasse la limite autorisée.".to_string()),
-        None => Some("Saisir une quantité entière (ex. 12).".to_string()),
-    }
 }
 
 fn price_error(parsed: Option<i64>) -> Option<String> {

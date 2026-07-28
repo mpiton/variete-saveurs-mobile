@@ -14,6 +14,8 @@ use crate::domain::{
 use super::{
     actions::{Button, ButtonVariant},
     feedback::BottomSheet,
+    fields::OutlinedField,
+    line_sheet::{parse_quantity, quantity_error},
 };
 
 /// Heading for items without a group.
@@ -49,22 +51,58 @@ pub fn group_catalog_items(items: Vec<CatalogItem>) -> Vec<CatalogGroup> {
     groups
 }
 
-/// One tap on a chip copies the item into a draft line — quantity 1. The
-/// line is copied, never referenced: a later catalog edit cannot rewrite a
-/// draft line nor an issued document.
-pub fn line_from_catalog_item(item: &CatalogItem) -> LineInput {
+/// Copies the item into a draft line at the quantity she just said. The line is
+/// copied, never referenced: a later catalog edit cannot rewrite a draft line
+/// nor an issued document.
+pub fn line_from_catalog_item(item: &CatalogItem, quantity: i64) -> LineInput {
     LineInput {
         group: item.group_name.clone(),
         description: item.name.clone(),
-        quantity: 1,
+        quantity,
         unit_price_cents: item.unit_price_cents,
     }
+}
+
+/// What she meant by what she typed. Empty is one — the placeholder says so —
+/// because « une pièce montée » must stay two taps while « 40 » is typed
+/// straight in, with no prefilled 1 to clear first. Anything else goes through
+/// the line sheet's own rule, so a quantity means the same thing and fails with
+/// the same French sentence wherever she says it.
+fn picked_quantity(typed: &str) -> Result<i64, String> {
+    if typed.trim().is_empty() {
+        return Ok(1);
+    }
+    let parsed = parse_quantity(typed);
+    if let Some(message) = quantity_error(parsed) {
+        return Err(message);
+    }
+    // `quantity_error` returning None means `parsed` is Some; the fallback is
+    // the empty case's own answer rather than a second rule.
+    Ok(parsed.unwrap_or(1))
+}
+
+/// Brings the whole prompt into view, then puts the keypad up on the quantity.
+///
+/// Called from the prompt's own `onmounted`, not from the chip's `onclick`:
+/// there the field does not exist yet, since Dioxus has not rendered it. The
+/// section is scrolled rather than the field, because at 200 % system font the
+/// sheet is 80 % of the screen and « Ajouter » sits below the fold — focusing
+/// the field alone would leave the button she needs next off screen.
+fn reveal_quantity_prompt() {
+    let _ = dioxus::document::eval(
+        "(() => {
+             const prompt = document.querySelector('.catalog-picker__prompt');
+             if (prompt) { prompt.scrollIntoView({ block: 'nearest' }); }
+             const field = document.getElementById('field-catalog-quantity');
+             if (field) { field.focus({ preventScroll: true }); }
+         })()",
+    );
 }
 
 #[component]
 pub fn CatalogPicker(
     state: Signal<Option<Vec<CatalogItem>>>,
-    on_pick: EventHandler<CatalogItem>,
+    on_pick: EventHandler<LineInput>,
     on_free_form: EventHandler<MouseEvent>,
 ) -> Element {
     // Picks accumulate instead of closing the sheet on each one: a traiteur
@@ -72,8 +110,21 @@ pub fn CatalogPicker(
     // cost a reopen. The count is the receipt for taps that land behind the
     // scrim; it resets with the sheet.
     let mut added = use_signal(|| 0usize);
+    // The item waiting for its quantity. Every catalogue line used to arrive at
+    // one, so « 40 mini burgers » meant closing this sheet, tapping the row,
+    // clearing the 1 and typing 40 — once per line, five to ten times a quote.
+    // She says how many where she says which.
+    let mut pending = use_signal(|| None::<CatalogItem>);
+    let mut quantity = use_signal(String::new);
+    let mut quantity_message = use_signal(|| None::<String>);
+    let mut clear_prompt = move || {
+        pending.set(None);
+        quantity.set(String::new());
+        quantity_message.set(None);
+    };
     let mut close = move || {
         added.set(0);
+        clear_prompt();
         state.set(None);
     };
 
@@ -107,8 +158,12 @@ pub fn CatalogPicker(
                                     onclick: {
                                         let item = item.clone();
                                         move |_| {
-                                            added += 1;
-                                            on_pick.call(item.clone());
+                                            // Tapping another chip while the
+                                            // prompt is up switches item; it
+                                            // does not add the previous one.
+                                            quantity.set(String::new());
+                                            quantity_message.set(None);
+                                            pending.set(Some(item.clone()));
                                         }
                                     },
                                     span { class: "catalog-chip__name", "{item.name}" }
@@ -116,6 +171,46 @@ pub fn CatalogPicker(
                                 }
                             }
                         }
+                    }
+                }
+            }
+            if let Some(item) = pending() {
+                section {
+                    // Keyed on the item so tapping another chip remounts the
+                    // prompt, which re-runs the reveal for the new one.
+                    key: "{item.id.unwrap_or(0)}",
+                    class: "catalog-picker__prompt",
+                    aria_label: "Quantité pour {item.name}",
+                    onmounted: move |_| reveal_quantity_prompt(),
+                    p { class: "catalog-picker__prompt-name", "{item.name}" }
+                    OutlinedField {
+                        label: "Quantité".to_string(),
+                        name: "catalog-quantity".to_string(),
+                        // Empty means one, and the placeholder says so: one of
+                        // something stays two taps, forty is typed straight in
+                        // without clearing a prefilled 1 first.
+                        placeholder: "1".to_string(),
+                        input_mode: "numeric".to_string(),
+                        value: quantity(),
+                        error: quantity_message(),
+                        oninput: move |event: FormEvent| {
+                            quantity.set(event.value());
+                            quantity_message.set(None);
+                        },
+                    }
+                    Button {
+                        label: "Ajouter".to_string(),
+                        onclick: {
+                            let item = item.clone();
+                            move |_| match picked_quantity(&quantity()) {
+                                Err(message) => quantity_message.set(Some(message)),
+                                Ok(picked) => {
+                                    added += 1;
+                                    on_pick.call(line_from_catalog_item(&item, picked));
+                                    clear_prompt();
+                                }
+                            }
+                        },
                     }
                 }
             }
@@ -134,7 +229,14 @@ pub fn CatalogPicker(
             }
             Button {
                 label: "Terminé".to_string(),
-                variant: ButtonVariant::Filled,
+                // While the prompt is up, « Ajouter » is the primary action and
+                // this one steps down: two filled buttons in one sheet is two
+                // answers to « what now ».
+                variant: if pending().is_some() {
+                    ButtonVariant::Tonal
+                } else {
+                    ButtonVariant::Filled
+                },
                 onclick: move |_| close(),
             }
         }
@@ -215,15 +317,16 @@ mod tests {
     }
 
     #[test]
-    fn line_from_catalog_item_copies_the_item_with_quantity_one() {
-        let line = line_from_catalog_item(&item(7, "Pièce montée 60 choux", Some("Sucré"), 45_000));
+    fn line_from_catalog_item_copies_the_item_at_the_quantity_she_said() {
+        let line =
+            line_from_catalog_item(&item(7, "Pièce montée 60 choux", Some("Sucré"), 45_000), 40);
 
         assert_eq!(
             line,
             LineInput {
                 group: Some("Sucré".to_string()),
                 description: "Pièce montée 60 choux".to_string(),
-                quantity: 1,
+                quantity: 40,
                 unit_price_cents: 45_000,
             }
         );
@@ -250,5 +353,26 @@ mod tests {
     fn the_added_count_agrees_in_number() {
         assert_eq!(added_label(1), "1 prestation ajoutée");
         assert_eq!(added_label(3), "3 prestations ajoutées");
+    }
+
+    #[test]
+    fn an_empty_quantity_is_one_and_a_bad_one_says_why() {
+        use super::picked_quantity;
+
+        assert_eq!(picked_quantity(""), Ok(1), "the placeholder's promise");
+        assert_eq!(picked_quantity("   "), Ok(1));
+        assert_eq!(picked_quantity("40"), Ok(40));
+        assert_eq!(
+            picked_quantity("0"),
+            Err("La quantité doit être positive.".to_string())
+        );
+        assert_eq!(
+            picked_quantity("12,5"),
+            Err("Saisir une quantité entière (ex. 12).".to_string())
+        );
+        assert_eq!(
+            picked_quantity("999999"),
+            Err("La quantité dépasse la limite autorisée.".to_string())
+        );
     }
 }

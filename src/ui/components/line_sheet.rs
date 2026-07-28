@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use dioxus::prelude::*;
 
+use crate::domain::validation::MAX_LINE_QUANTITY;
+
 use crate::domain::models::LineDraft;
 
 use super::{
@@ -223,6 +225,28 @@ fn disarm_delete(mut editor: Signal<Option<LineEditorState>>) {
 /// `DELETE_CONFIRM_MIN_DELAY` old.
 fn confirm_delete_ready(armed_at: Option<Instant>) -> bool {
     armed_at.is_some_and(|armed_at| armed_at.elapsed() >= DELETE_CONFIRM_MIN_DELAY)
+}
+
+/// The quantity rule, shared by the line sheet and the catalogue picker so a
+/// quantity means the same thing wherever she says it — same bounds, same
+/// French message.
+/// Strict integer shape (digits only, like the desktop form) — range checks
+/// stay with the domain validation.
+pub fn parse_quantity(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    trimmed.parse().ok()
+}
+
+pub fn quantity_error(parsed: Option<i64>) -> Option<String> {
+    match parsed {
+        Some(quantity) if (1..=MAX_LINE_QUANTITY).contains(&quantity) => None,
+        Some(0) => Some("La quantité doit être positive.".to_string()),
+        Some(_) => Some("La quantité dépasse la limite autorisée.".to_string()),
+        None => Some("Saisir une quantité entière (ex. 12).".to_string()),
+    }
 }
 
 #[cfg(test)]

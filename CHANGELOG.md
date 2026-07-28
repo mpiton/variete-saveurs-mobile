@@ -51,6 +51,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- The catalogue asks how many at the moment she says which. Every line copied
+  from the catalogue arrived at `quantity: 1`, so « 40 mini burgers » meant
+  closing the sheet, tapping the row, clearing the 1 and typing 40 — once per
+  line, five to ten times a quote, in the evening session `PRODUCT.md` describes
+  as several documents in a row. Tapping an item now opens a prompt under the
+  grid: the item's name, a numeric field, « Ajouter », then back to the grid
+  with the counter up. An empty field means one and the placeholder says so, so
+  one of something is still two taps while forty is typed straight in. Tapping
+  another chip switches item rather than adding the pending one, and « Terminé »
+  steps down to tonal while the prompt is up so the sheet has one primary
+  action. The quantity rule — bounds and French message — is the line sheet's
+  own, shared rather than copied, so a quantity means the same thing wherever
+  she says it.
+
+  The audit proposed ± steppers on the row for this. That is the wrong
+  affordance for a caterer: reaching 40 would be 39 taps.
+
 - A floating label no longer covers the value it names when the system font
   grows. The field reserved `--space-xs` — 6 fixed px — for a label sized in
   rem, so at 200 % there were 24px of label in 6px of room, and 42px once a long
