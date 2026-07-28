@@ -43,6 +43,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Predictive back actually runs. `DESIGN.md §5` has promised « Back système
+  (geste prédictif) partout » since it was written, and the app never delivered
+  it: `MainActivity` registered an `OnBackPressedCallback` enabled
+  unconditionally, and a callback held at default priority suppresses the system
+  animations — back-to-home, and the long-press preview Android 16 gives
+  three-button navigation — whatever `android:enableOnBackInvokedCallback` says.
+  Back worked; it just never showed her where it was going.
+
+  The callback now stands down when the app has nothing of its own to do with
+  Back: no sheet open, no route to return to. Kotlin can see neither, so the web
+  side reports one boolean over a single-method `@JavascriptInterface`. The
+  sheet half is counted by `BottomSheet` — every sheet in the app goes through
+  it, so a sheet added later is covered without anyone registering it — and the
+  route half is the router's own `can_go_back`. It starts enabled, so the window
+  before the first report behaves exactly as it did before: a missing animation
+  is the safe way to be wrong, a sheet that will not close is not.
+
+  The seam is the part no compiler checks — a global name written in Kotlin and
+  called from Rust — so the guard reads the name out of `MainActivity.kt` and
+  requires it of `app.rs` rather than writing it twice.
+
 - The brouillon is written on the way out, not only every 500 ms. The debounced
   auto-save lives on the screen's scope and Dioxus drops a scope's spawned tasks
   when it unmounts, so leaving inside the debounce window took the last
