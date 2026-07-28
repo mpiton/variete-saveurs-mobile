@@ -1371,6 +1371,27 @@ input[aria-busy="true"]:disabled {
     background: #FFFFFF;
 }
 
+/* The exported PDF's page count, opposite the « Aperçu » pill and in its
+   family. It is the one thing the preview cannot show by itself: the render in
+   the frame is a continuous strip, and the file she sends is laid out by Typst.
+   Absent until the worker answers, and absent if it fails — a missing count
+   says nothing false. */
+.preview-pages {
+    position: absolute;
+    z-index: 1;
+    right: var(--space-sm);
+    bottom: var(--space-sm);
+    margin: 0;
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--color-surface-dim);
+    color: var(--color-label);
+    font-size: var(--type-label-medium-size);
+    font-weight: 700;
+    pointer-events: none;
+}
+
 .preview-pill {
     position: absolute;
     z-index: 1;

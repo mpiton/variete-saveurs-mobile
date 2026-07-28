@@ -14,6 +14,7 @@ use crate::domain::{
     numbering::next_number,
     render::render_document_html,
 };
+use crate::platform::export::count_pdf_pages;
 
 use super::{
     app::{DatabaseContext, Route},
@@ -22,12 +23,98 @@ use super::{
     },
     issue::{
         ExportJobState, IssueFlow, IssuePhase, check_before_issue, start_export, start_issue,
-        use_export_notice_dismiss,
+        use_export_notice_dismiss, write_from_worker,
     },
     share::{share_file_names, use_share_flow},
 };
 
 const PREVIEW_GESTURES: &str = include_str!("preview_gestures.js");
+
+/// The page count, and which preview it belongs to.
+///
+/// The tag is the route's own `document` — `None` is the draft. Dioxus keeps a
+/// component instance alive when only route parameters change, and the
+/// `Routable` derive leaves nowhere to key `Preview` by its document, so an
+/// untagged count could outlive the document it was computed for: shown under
+/// the wrong quote, or written by a worker that finished after the screen had
+/// moved on. No path pushes a preview from a preview today, so neither happens;
+/// the tag is what keeps that true when one is added.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageCount {
+    document: Option<i64>,
+    pages: PageResult,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PageResult {
+    /// Nothing asked for yet — the state a fresh screen starts in.
+    Unstarted,
+    Pending,
+    Known(usize),
+    Unavailable,
+}
+
+/// Compiles the document on a worker to learn how many pages it really makes.
+///
+/// The preview and the file she sends are two renderers (ARCHI §5), and the
+/// preview's continuous strip cannot predict the PDF's pagination: measured
+/// over fourteen documents, the HTML height disagreed with the real layout
+/// twice and in both directions, so no page height reconciles them. Drawing
+/// page marks from the strip would have been wrong exactly at the boundary,
+/// which is the only place the answer matters. The number comes from the
+/// compiler that makes the PDF instead.
+///
+/// It runs on the draft preview because « émis = figé »: this is the last
+/// screen where a quote that falls badly across pages can still be changed.
+fn start_page_count(
+    mut count: Signal<PageCount, SyncStorage>,
+    document: Option<i64>,
+    input: DocumentInput,
+    number: i64,
+) {
+    // One worker per preview: already running or answered for this document.
+    let current = *count.peek();
+    if current.document == document && current.pages != PageResult::Unstarted {
+        return;
+    }
+    count.set(PageCount {
+        document,
+        pages: PageResult::Pending,
+    });
+    std::thread::spawn(move || {
+        let pages = match count_pdf_pages(&input, number) {
+            Ok(pages) => PageResult::Known(pages),
+            // Informational only. The export path reports its own failures in
+            // French; a missing count is nothing she can act on, so it stays
+            // quiet on screen and loud in the logs.
+            Err(error) => {
+                eprintln!("Preview page count failed: {error}");
+                PageResult::Unavailable
+            }
+        };
+        write_from_worker(count, move |current| {
+            // A worker that lands after the screen moved on is answering about
+            // a document nobody is looking at any more.
+            if current.document == document {
+                current.pages = pages;
+            }
+        });
+    });
+}
+
+/// Silent until the worker answers, silent if it fails, and silent while it is
+/// still about the previous document: an absent count says nothing false, where
+/// a guessed or stale one would.
+fn pages_label(count: PageCount, document: Option<i64>) -> Option<String> {
+    if count.document != document {
+        return None;
+    }
+    match count.pages {
+        PageResult::Known(1) => Some("1 page".to_string()),
+        PageResult::Known(pages) => Some(format!("{pages} pages")),
+        PageResult::Unstarted | PageResult::Pending | PageResult::Unavailable => None,
+    }
+}
 
 /// What the preview renders, resolved from the optional document id in the
 /// route: no id = the draft, an id = the issued document stored under it.
@@ -108,6 +195,10 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
     let export_state = use_signal_sync(|| ExportJobState::Ready);
     let share = use_share_flow();
     use_export_notice_dismiss(export_state);
+    let page_count = use_signal_sync(|| PageCount {
+        document,
+        pages: PageResult::Unstarted,
+    });
 
     // Loaded synchronously in the body; the phase signals only re-run the
     // query + render on their own transitions (identical output for a frozen
@@ -148,6 +239,11 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
             let (pdf_name, png_name) = share_file_names(&data.kind, data.number);
             let share_input = data.input.clone();
             let share_number = data.number;
+            // Started from the body rather than from `onmounted`: a retained
+            // instance keeps its elements mounted, so the mount handler would
+            // never fire again for a document that just changed.
+            start_page_count(page_count, document, data.input.clone(), data.number);
+            let pages_label = pages_label(page_count(), document);
             rsx! {
                 section { class: "preview-screen",
                     div {
@@ -158,6 +254,17 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                         },
                         if draft {
                             p { class: "preview-pill", "Aperçu" }
+                        }
+                        // The exported PDF's real page count, from the compiler
+                        // that produces it. The strip above has no pages of its
+                        // own, and it cannot be made to predict these.
+                        if let Some(label) = pages_label {
+                            p {
+                                class: "preview-pages",
+                                role: "status",
+                                aria_live: "polite",
+                                "{label}"
+                            }
                         }
                         div { class: "preview-stage", id: "preview-stage",
                             iframe {
@@ -435,5 +542,44 @@ mod tests {
             load_preview(&connection, Some(999)),
             Err(PreviewError::DocumentNotFound)
         );
+    }
+
+    /// The count is exact or absent — never a guess dressed as a number. And
+    /// « 1 pages » on a one-page quote would undo the credit the exactness buys.
+    #[test]
+    fn the_page_count_is_shown_only_when_it_is_known() {
+        use super::{PageCount, PageResult, pages_label};
+
+        let about = |document, pages| PageCount { document, pages };
+
+        assert_eq!(
+            pages_label(about(Some(7), PageResult::Known(1)), Some(7)).as_deref(),
+            Some("1 page")
+        );
+        assert_eq!(
+            pages_label(about(Some(7), PageResult::Known(3)), Some(7)).as_deref(),
+            Some("3 pages")
+        );
+        assert_eq!(pages_label(about(None, PageResult::Pending), None), None);
+        assert_eq!(pages_label(about(None, PageResult::Unstarted), None), None);
+        assert_eq!(
+            pages_label(about(None, PageResult::Unavailable), None),
+            None
+        );
+    }
+
+    /// The count belongs to one preview. Shown under another document it would
+    /// be a confident wrong number on the screen that exists to be trusted.
+    #[test]
+    fn a_count_from_another_document_is_never_shown() {
+        use super::{PageCount, PageResult, pages_label};
+
+        let counted = PageCount {
+            document: Some(7),
+            pages: PageResult::Known(3),
+        };
+        assert_eq!(pages_label(counted, Some(8)), None, "another document");
+        assert_eq!(pages_label(counted, None), None, "the draft");
+        assert_eq!(pages_label(counted, Some(7)).as_deref(), Some("3 pages"));
     }
 }

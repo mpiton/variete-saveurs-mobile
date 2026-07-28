@@ -51,6 +51,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- The preview says how many pages the exported PDF will have, before she issues
+  it. The screen renders `render.rs` HTML — one continuous strip with no pages —
+  while the file she sends is laid out by Typst (ARCHI §5), so a quote that fell
+  badly across pages was invisible until after the document was frozen. The
+  count now comes from the compiler that produces the PDF, on a worker, and is
+  absent until it answers rather than estimated.
+
+  Estimating was tried first and measured against the truth on fourteen
+  documents: the HTML height disagrees with the real layout twice and in both
+  directions — 12 lines make one HTML page and two PDF pages, 58 lines make
+  three HTML pages and two PDF pages — so no page height reconciles them, and
+  drawing page marks from the strip would have been wrong exactly at a
+  boundary, which is the only place the answer matters. `templates/` was left
+  byte-identical to the frozen desktop's throughout.
+
 - The draft screen borrows the letterhead rule from the document it produces.
   `DESIGN.md §1` says the register is « rouge/rose/or/crème/brun partout »,
   paper and screen alike, and gold — the hue that rules the A4 header — existed
