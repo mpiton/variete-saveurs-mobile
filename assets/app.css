@@ -540,13 +540,17 @@ input[aria-busy="true"]:disabled {
     display: none;
 }
 
+/* Same case as `.app-menu`, so the same answer: these float over the home
+   screen and over whatever card happens to be under them, and the container
+   rail left them at 1.34:1 on the cream and 1.63:1 in the dark. Ink clears
+   11.09:1 at worst. Two items, not twenty — the weight is affordable here. */
 .fab-menu__item {
     display: inline-flex;
     min-height: var(--touch-target);
     align-items: center;
     gap: var(--touch-gap);
     padding: 0 var(--space-md);
-    border: 1px solid var(--color-border);
+    border: 1px solid var(--color-ink);
     border-radius: var(--radius-control);
     background: var(--color-surface);
     color: var(--color-ink);
@@ -587,7 +591,14 @@ input[aria-busy="true"]:disabled {
     height: 40px;
     place-items: center;
     padding: 0 var(--space-sm);
-    border: 1px solid var(--color-border);
+    /* The outline belongs to the group, not to the segment: three segments
+       abut to draw one continuous border, which is how M3 draws this control,
+       and the container rail left the whole thing at 1.53:1 on a card. Primary
+       rather than a neutral, because the group *is* the interactive object and
+       primary is its single voice (Règle de l'Accent Unique) — 5.42:1 on the
+       cream, 6.16:1 on a card. The checked segment is still told apart by its
+       fill, which is what carries that state; the outline never did. */
+    border: 1px solid var(--color-primary);
     border-right-width: 0;
     background: var(--color-surface);
     pointer-events: none;
@@ -859,7 +870,11 @@ input[aria-busy="true"]:disabled {
     align-content: center;
     gap: 2px;
     padding: var(--space-sm) var(--space-md);
-    border: 1px solid var(--color-border-soft);
+    /* Muted rather than ink: these are proposals under a field she is typing
+       in, and an ink rail would out-shout the field itself. 6.57:1 light and
+       7.05:1 dark against the panel, where the soft rail gave 1.30 and 1.21 —
+       the outline is the only thing saying a suggestion is tappable. */
+    border: 1px solid var(--color-muted);
     border-radius: var(--radius-panel);
     background: var(--color-surface-dim);
     color: var(--color-ink);
@@ -1286,7 +1301,11 @@ input[aria-busy="true"]:disabled {
     align-content: center;
     gap: 2px;
     padding: var(--space-xs) var(--space-sm);
-    border: 1px solid var(--color-border-soft);
+    /* Muted, not ink and not primary: a catalogue holds twenty of these in one
+       grid, and either louder value would turn the sheet into a wall. On the
+       sheet the fill is the same white as the sheet itself — 1.00:1 — so the
+       outline is all there is; muted takes it to 6.57:1 light, 6.24:1 dark. */
+    border: 1px solid var(--color-muted);
     border-radius: var(--radius-panel);
     background: var(--color-surface);
     color: var(--color-ink);

@@ -305,6 +305,55 @@ fn signal<'a>(scheme: &'a str, value: Option<&str>) -> Option<&'a str> {
     resolved.starts_with('#').then_some(resolved)
 }
 
+/// Controls whose outline is the whole of their affordance: their fill is the
+/// surface they sit on, so if the edge does not clear 3:1 there is nothing left
+/// to say they can be tapped. Same DESIGN.md §2 rule the buttons and the menu
+/// answer to, applied where it was never applied.
+///
+/// The list is maintained by hand, and that is a real limit: « is this
+/// tappable » is not derivable from a stylesheet, and the host a rule sits on
+/// is not either. What the test does buy is that the four cannot drift back —
+/// and the pairing of an element with the surface it is posed on is written
+/// down somewhere instead of living in whoever last measured it.
+#[test]
+fn a_control_that_is_only_an_outline_keeps_that_outline_visible() {
+    let css = project_file("assets/app.css");
+    let dark = dark_block(&css);
+    let light = css.replace(dark, "");
+
+    // (rule, the surfaces it can be posed on)
+    let cases: [(&str, &[&str]); 4] = [
+        // Floats over the home screen, and over a card once the list scrolls.
+        (".fab-menu__item", &["--color-bg", "--color-surface"]),
+        // Proposals under the client field, inside a form panel.
+        (".client-suggestion", &["--color-surface"]),
+        // The filter on the home screen, the client kind inside a panel.
+        (
+            ".segmented-button__label",
+            &["--color-bg", "--color-surface"],
+        ),
+        // A grid of them inside the catalogue sheet.
+        (".catalog-chip", &["--color-elevated"]),
+    ];
+
+    for (selector, hosts) in cases {
+        let rule = rule_block(&css, selector).unwrap_or_else(|| panic!("{selector} must exist"));
+        for (scheme_name, scheme) in [("clair", light.as_str()), ("sombre", dark)] {
+            let fill = signal(scheme, declaration(rule, "background"));
+            let edge = signal(scheme, declaration(rule, "border"));
+            for host_token in hosts {
+                let host = css_token(scheme, host_token);
+                let fill_ratio = fill.map_or(0.0, |value| contrast_ratio(value, host));
+                let edge_ratio = edge.map_or(0.0, |value| contrast_ratio(value, host));
+                assert!(
+                    fill_ratio.max(edge_ratio) >= 3.0,
+                    "{selector} {scheme_name} sur {host_token}: nothing says it is tappable (aplat {fill_ratio:.2}:1, bord {edge_ratio:.2}:1)"
+                );
+            }
+        }
+    }
+}
+
 /// The top app bar's menu is the one panel that floats free: it overlaps the
 /// bar by `--space-xs` and spills over the page and over whatever card sits
 /// beneath it, so it has to keep a shape against all three at once. The bottom
