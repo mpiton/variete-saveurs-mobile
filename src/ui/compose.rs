@@ -345,6 +345,7 @@ pub(super) fn Compose(id: i64) -> Element {
             OutlinedField {
                 label: "Destinataire".to_string(),
                 name: "compose-to".to_string(),
+                enter_key_hint: "next".to_string(),
                 input_type: "email".to_string(),
                 input_mode: "email".to_string(),
                 placeholder: "client@exemple.fr".to_string(),
@@ -359,6 +360,7 @@ pub(super) fn Compose(id: i64) -> Element {
             OutlinedField {
                 label: "Objet".to_string(),
                 name: "compose-subject".to_string(),
+                enter_key_hint: "next".to_string(),
                 value: subject(),
                 disabled: running,
                 oninput: move |event: FormEvent| subject.set(event.value()),

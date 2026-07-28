@@ -349,7 +349,11 @@ html.ime-visible .screen-scroll:not(:has(.chrome-action-bar)) {
     margin: 0 auto;
 }
 
-.screen h2 {
+/* Title Medium covers both levels: the heading tree exists for TalkBack, and
+   DESIGN.md §3 gives section titles one role whatever their depth — the form's
+   sections are h3 under the screen's h2, and they look the same. */
+.screen h2,
+.screen h3 {
     margin: 0;
     font-size: var(--type-title-medium-size);
     font-weight: var(--type-title-medium-weight);
@@ -1315,7 +1319,7 @@ input[aria-busy="true"]:disabled {
     gap: var(--space-sm);
 }
 
-.catalog-group h3 {
+.catalog-group h2 {
     margin: 0;
     color: var(--color-label);
     font-size: var(--type-title-medium-size);

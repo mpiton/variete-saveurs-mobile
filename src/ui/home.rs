@@ -26,8 +26,8 @@ static LAST_FILTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Below this many documents the list is short enough to read, and a permanent
 /// search field would be a fifth thing competing for the home screen. Above it,
-/// « le devis de la mairie » starts to be a scroll. At a few documents a month,
-/// it lands near the end of the first year.
+/// « le devis de la mairie » — or « le 12 » — starts to be a scroll. At a few
+/// documents a month, it lands near the end of the first year.
 const SEARCH_THRESHOLD: usize = 15;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -155,7 +155,10 @@ pub(super) fn Home() -> Element {
                     if offers_search {
                         div { class: "home-search",
                             OutlinedField {
-                                label: "Rechercher une cliente".to_string(),
+                                // Both handles she has, named: the client she
+                                // remembers, and the number printed on the paper
+                                // in front of her.
+                                label: "Rechercher (nom ou n°)".to_string(),
                                 name: "home-search".to_string(),
                                 value: search(),
                                 autocomplete: "off".to_string(),
@@ -222,7 +225,9 @@ pub(super) fn Home() -> Element {
                         // Factures, sent her looking for a bug that was not one.
                         if searching {
                             EmptyState {
-                                message: "Aucune cliente de ce nom",
+                                // The search takes a name or a number now, so
+                                // the nothing it reports cannot name only one.
+                                message: "Aucun document trouvé",
                                 action_label: "Effacer la recherche",
                                 onclick: move |_| search.set(String::new()),
                             }

@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::sync::LazyLock;
 
 use chrono::NaiveDate;
 use html_escape::encode_text;
@@ -11,8 +12,15 @@ const LOGO_BYTES: &[u8] = include_bytes!("../../templates/logo.png");
 
 /// The embedded logo as a data URI. The document header and the splash overlay
 /// (DESIGN §8) paint the same bytes, so the APK never carries a second copy.
+///
+/// Encoded once for the process. 180 KB of PNG through a byte-at-a-time base64
+/// is not something to redo per call, and `render_document_html` runs on every
+/// render of the fiche — snackbar ticks and sheet toggles included.
+static LOGO_DATA_URI: LazyLock<String> =
+    LazyLock::new(|| format!("data:image/png;base64,{}", base64_encode(LOGO_BYTES)));
+
 pub fn logo_data_uri() -> String {
-    format!("data:image/png;base64,{}", base64_encode(LOGO_BYTES))
+    LOGO_DATA_URI.clone()
 }
 
 pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
@@ -31,7 +39,7 @@ pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
     } else {
         format!("Total net à payer avant le {event_date}")
     };
-    let logo_base64 = base64_encode(LOGO_BYTES);
+    let logo_uri: &str = &LOGO_DATA_URI;
 
     let mut html = String::new();
     write!(
@@ -50,7 +58,7 @@ pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
 <div class="page">
   <header class="header">
     <div>
-      <img class="logo" src="data:image/png;base64,{logo_base64}" alt="Logo Variété de Saveurs">
+      <img class="logo" src="{logo_uri}" alt="Logo Variété de Saveurs">
       <div class="brand-name">Variété de Saveurs</div>
     </div>
     <div class="document-box">

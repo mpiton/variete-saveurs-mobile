@@ -153,6 +153,7 @@ pub(super) fn Settings() -> Element {
                 OutlinedField {
                     label: "Nom de l’expéditeur (optionnel)".to_string(),
                     name: "sender-name".to_string(),
+                    enter_key_hint: "next".to_string(),
                     placeholder: "Variété de Saveurs".to_string(),
                     value: state.sender_name.clone(),
                     oninput: move |event: FormEvent| {
@@ -162,6 +163,7 @@ pub(super) fn Settings() -> Element {
                 OutlinedField {
                     label: "Adresse email de l’expéditeur".to_string(),
                     name: "sender-email".to_string(),
+                    enter_key_hint: "next".to_string(),
                     input_type: "email".to_string(),
                     input_mode: "email".to_string(),
                     placeholder: "contact@exemple.fr".to_string(),
