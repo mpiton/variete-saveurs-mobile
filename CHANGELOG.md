@@ -191,6 +191,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `.claude/skills/variete-saveurs-mobile/SKILL.md` described a different
+  project. Auto-generated, it claimed camelCase file names (there are none —
+  45 files, all snake_case, and clippy would refuse otherwise), tests in
+  `*.test.rs` files (none exist; tests are inline `#[cfg(test)]` modules plus
+  `tests/*.rs`), an unknown test framework, and only `feat`/`fix` commit
+  prefixes. The whole file was also wrapped in a stray ``` fence with no
+  frontmatter, which is why its description read as ```` ```markdown ````.
+  It matters more than a stale doc usually would: `CLAUDE.md`, `ARCHI.md`,
+  `DESIGN.md`, `PRODUCT.md` and `CONTEXT.md` are all in `.git/info/exclude`, so
+  this was the only conventions document a clone actually contains. Rewritten
+  from the repository, and it now carries what the local documents do not — the
+  three renderings of the document and why the HTML cannot predict the PDF's
+  pagination, how to measure a layout rule no Rust test can reach, and the
+  guard-the-rule-not-the-instance discipline that three repeated defects paid
+  for.
+
 - `CLAUDE.md` listed a coverage command that cannot run: `cargo llvm-cov
   --fail-under-lines 85 -p devis-mobile --lib` exits with « no library targets
   found in package `devis-mobile` », the crate being a binary. It now shows the
