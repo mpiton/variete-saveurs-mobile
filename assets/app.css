@@ -225,12 +225,13 @@ summary:focus-visible {
     min-width: 0;
     flex: 1;
     margin: 0;
-    overflow: hidden;
+    /* Il se replie, il ne se tronque plus. À 200 % « Envoi par email » demande
+       318px pour 276 : l'ellipse mangeait le seul repère de contexte de
+       l'écran, et DESIGN.md §5 rend ces sept titres normatifs. La barre a un
+       `min-height`, donc elle grandit avec lui. */
     font-size: var(--type-title-large-size);
     font-weight: var(--type-title-large-weight);
     line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .icon-button {
@@ -570,11 +571,20 @@ input[aria-busy="true"]:disabled {
     min-height: var(--touch-target);
     grid-auto-columns: minmax(80px, 1fr);
     grid-auto-flow: column;
-    align-items: center;
+    /* `stretch`, pas `center` : un libellé qui se replie rend son segment plus
+       haut, et trois segments de hauteurs différentes cassent le contour du
+       groupe — qui est un seul objet. */
+    align-items: stretch;
 }
 
 .segmented-button__option {
-    height: var(--touch-target);
+    /* Le bouton doit faire grandir son libellé, sinon `align-items: stretch`
+       s'arrête à lui : à 200 % « Professionnel » se repliait sur deux lignes
+       pendant que le segment coché restait à 48px, et le groupe avait deux
+       hauteurs. */
+    display: grid;
+    min-height: var(--touch-target);
+    align-items: stretch;
     padding: 4px 0;
     border: 0;
     background: transparent;
@@ -587,10 +597,21 @@ input[aria-busy="true"]:disabled {
 .segmented-button__label {
     position: relative;
     z-index: 1;
-    display: grid;
-    height: 40px;
-    place-items: center;
+    /* Flex plutôt que `grid` + `place-items: center` : là, le texte était un
+       item centré à sa largeur max, donc il débordait au lieu de se replier —
+       « Professionnel » demandait 200px pour 175 à 200 % de police système. */
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
     padding: 0 var(--space-sm);
+    text-align: center;
+    /* « Professionnel » est un seul mot : replier ne suffit pas, il n'y a pas
+       de blanc où couper. La césure française le coupe proprement quand la
+       langue est connue, et `break-word` est le plancher pour le cas où elle ne
+       l'est pas — mieux vaut un mot coupé qu'un mot qui sort de son segment. */
+    hyphens: auto;
+    overflow-wrap: break-word;
     /* The outline belongs to the group, not to the segment: three segments
        abut to draw one continuous border, which is how M3 draws this control,
        and the container rail left the whole thing at 1.53:1 on a card. Primary
@@ -987,9 +1008,13 @@ input[aria-busy="true"]:disabled {
     white-space: nowrap;
 }
 
+/* Deux colonnes tant que deux colonnes tiennent. Le seuil est en `rem`, donc
+   il suit la police système : à 200 % « Descendre » demandait 189px pour 185, et
+   la grille bascule maintenant d'elle-même sur une colonne. Une contrainte qui
+   porte sur du texte s'exprime dans l'unité de ce texte. */
 .line-sheet__row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
     gap: var(--space-sm);
 }
 
