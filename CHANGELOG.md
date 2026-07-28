@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- A floating label no longer covers the value it names when the system font
+  grows. The field reserved `--space-xs` — 6 fixed px — for a label sized in
+  rem, so at 200 % there were 24px of label in 6px of room, and 42px once a long
+  one wrapped to two lines, on a field 50px tall: the value became unreadable at
+  exactly the size chosen to make it readable. The label sits in the flow now
+  and takes back half of its own line box, so it takes the height it needs at
+  any scale and however many lines, and only its last line straddles the border.
+  Measured at 412×915: 6px of overlap on a 48px field at 100 % — the M3 notch,
+  unchanged — 8px at 130 %, and 12px on 50px at 200 % where it was 42. The
+  loading spinner moved into the input's grid row for the same reason: its
+  20px offset assumed the input never moved.
+
 - The text fields own their outline too, which closes the family the previous
   pass opened. An M3 outlined field *is* its outline — its background is the
   panel's own white, so there is no fill to fall back on — and it had stayed on

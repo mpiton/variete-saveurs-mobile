@@ -305,6 +305,42 @@ fn signal<'a>(scheme: &'a str, value: Option<&str>) -> Option<&'a str> {
     resolved.starts_with('#').then_some(resolved)
 }
 
+/// Room reserved for text is expressed in that text's own unit, or it stops
+/// being enough the moment the system font grows.
+///
+/// The field used to reserve `--space-xs` — 6 fixed px — for a label sized in
+/// rem. At 200 % the label was 24px tall, 48px once it wrapped, and it lay
+/// across the value on a field 50px high: the text became unreadable at exactly
+/// the size chosen to make it readable. Only a browser can measure that, so
+/// what this pins is the shape of the answer — the label sits in the flow and
+/// takes back half of its *own* line box, rather than being positioned over a
+/// gap someone guessed at.
+#[test]
+fn the_floating_label_reserves_room_in_its_own_unit() {
+    let css = project_file("assets/app.css");
+    let field = rule_block(&css, ".outlined-field").expect(".outlined-field must exist");
+    let label = rule_block(&css, ".outlined-field label").expect("its label rule must exist");
+    let spinner =
+        rule_block(&css, ".outlined-field__spinner").expect("its spinner rule must exist");
+
+    assert!(
+        !field.contains("padding-top"),
+        "the field must not reserve a fixed gap for a label that scales"
+    );
+    assert!(
+        label.contains("0.5em"),
+        "the overlap must follow the label's own line box, not a spacing token"
+    );
+    assert!(
+        !label.contains("position: absolute"),
+        "an absolute label cannot push the field down when it wraps"
+    );
+    assert!(
+        !spinner.contains("top:"),
+        "the spinner rides the input's row; a fixed offset assumes the input never moves"
+    );
+}
+
 /// Controls whose outline is the whole of their affordance: their fill is the
 /// surface they sit on, so if the edge does not clear 3:1 there is nothing left
 /// to say they can be tapped. Same DESIGN.md §2 rule the buttons and the menu

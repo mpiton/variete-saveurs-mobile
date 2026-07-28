@@ -634,11 +634,20 @@ input[aria-busy="true"]:disabled {
     visibility: hidden;
 }
 
+/* The label lives in the flow, not on top of it. It used to be absolutely
+   positioned with the field reserving `--space-xs` — 6 fixed px — for it, while
+   the label itself is sized in rem and follows the system font. At 200 % that
+   is 24px of label in 6px of room: 18px of it lay across the value, and 42px
+   once a long label wrapped to two lines, on a field 50px tall. The value she
+   had typed became unreadable at the size chosen to make it readable.
+   In flow the label takes exactly the height it needs, whatever the scale and
+   however many lines, and a negative margin of half its own line box pulls the
+   field back up so the last line still straddles the border — the M3 notch,
+   unchanged at 100 % and proportional everywhere else. */
 .outlined-field {
     position: relative;
     display: grid;
     gap: var(--space-xs);
-    padding-top: var(--space-xs);
 }
 
 /* Muted, like the suggestions that drop out of this very field. An M3 outlined
@@ -665,9 +674,19 @@ input[aria-busy="true"]:disabled {
 }
 
 .outlined-field label {
-    position: absolute;
-    top: 0;
-    left: var(--space-sm);
+    /* Visually first, but the DOM keeps `input` before `label` so the
+       `input:focus + label` state selectors below still match. */
+    order: -1;
+    /* `0.5em` is half this label's own line box, so the overlap tracks the
+       label's size instead of a token that does not move. */
+    z-index: 1;
+    max-width: 100%;
+    margin-bottom: calc(-0.5em - var(--space-xs));
+    margin-left: var(--space-sm);
+    justify-self: start;
+    /* Paints over the field's border: without a stacking context the input,
+       later in the DOM, would draw its border across the label. */
+    position: relative;
     padding: 0 4px;
     background: var(--color-surface);
     color: var(--color-label);
@@ -744,10 +763,18 @@ input[aria-busy="true"]:disabled {
     opacity: 0.38;
 }
 
+/* Shares the input's grid cell instead of being pinned 20px from the field's
+   top. That offset assumed the input started at a fixed distance from it, which
+   stopped being true the moment the label began taking the room it needs: with
+   a two-line label the spinner would have floated above the field it belongs
+   to. Row 2 is the input — row 1 is the label, which `order: -1` puts first. */
 .outlined-field__spinner {
-    position: absolute;
-    top: 20px;
-    right: var(--space-md);
+    z-index: 1;
+    grid-row: 2;
+    grid-column: 1;
+    margin-right: var(--space-md);
+    align-self: center;
+    justify-self: end;
     color: var(--color-primary);
 }
 
