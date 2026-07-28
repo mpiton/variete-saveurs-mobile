@@ -304,11 +304,21 @@ summary:focus-visible {
    scrollport *minus this container's padding*, so any value here parks the
    chrome that many pixels above the screen edge — the system navigation band
    ended up painted in the content colour, with content scrolling into it. */
+/* The action bar is sticky *inside* this container, so it covers the last
+   band of the scrollport. `scrollIntoView` knows nothing about it and parks
+   whatever it is revealing exactly there — « Conditions de paiement » took the
+   focus on a failed validation, the keyboard came up, and the field she was
+   typing into sat behind the bar. Padding, not margin: this is the box the
+   scroll anchors against, and reserving the bar's height in it is what makes
+   `nearest` stop short of the bar instead of under it. */
 .screen-scroll {
     min-height: 0;
     flex: 1;
     overflow: auto;
     overscroll-behavior: contain;
+    scroll-padding-bottom: calc(
+        var(--touch-target) + 2 * var(--space-sm) + var(--system-inset-bottom)
+    );
     padding:
         var(--space-lg)
         max(var(--space-gutter), var(--system-inset-right))

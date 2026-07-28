@@ -606,8 +606,17 @@ fn the_bottom_system_inset_is_counted_once_on_its_axis() {
     // container's padding*, so any bottom padding here parks the chrome that
     // many pixels above the screen edge — the navigation band then shows the
     // content colour, with content scrolling into it.
+    //
+    // The `padding` declaration alone, not the whole rule: `scroll-padding`
+    // names the box a scroll anchors against and has no effect on layout, so
+    // the bar's rectangle does not move when it reserves the same inset.
+    let layout_padding = body(".screen-scroll {")
+        .split(';')
+        .find(|declaration| declaration.trim_start().starts_with("padding:"))
+        .unwrap_or_else(|| panic!(".screen-scroll declares no padding"))
+        .to_string();
     assert!(
-        !body(".screen-scroll {").contains("--system-inset-bottom"),
+        !layout_padding.contains("--system-inset-bottom"),
         "the scroll container must not reserve the bottom inset when a bar can paint it"
     );
 
@@ -628,6 +637,25 @@ fn the_bottom_system_inset_is_counted_once_on_its_axis() {
         !body("html.ime-visible .chrome-action-bar {").contains("--system-inset-bottom"),
         "the bar must not reserve the navigation band the keyboard already covers"
     );
+}
+
+#[test]
+fn programmatic_reveals_stop_above_the_sticky_action_bar() {
+    let css = project_file("assets/app.css");
+    let scrollport =
+        rule_block(&css, ".screen-scroll").expect(".screen-scroll must declare its geometry");
+
+    for part in [
+        "scroll-padding-bottom: calc(",
+        "var(--touch-target)",
+        "2 * var(--space-sm)",
+        "var(--system-inset-bottom)",
+    ] {
+        assert!(
+            scrollport.contains(part),
+            "the scrollport must reserve every part of the sticky action bar for reveal targets"
+        );
+    }
 }
 
 // Kotlin cannot know which screen the WebView is showing, so any navigation
