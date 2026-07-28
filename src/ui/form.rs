@@ -269,6 +269,7 @@ pub(super) fn Form() -> Element {
                         enter_key_hint: "next".to_string(),
                         value: current.client.name.clone(),
                         error: field_error(&issue_errors, DocumentField::ClientName),
+                        announce_error: false,
                         oninput: move |event: FormEvent| {
                             let value = event.value();
                             apply_edit(draft, edit_generation, |draft| {
@@ -325,6 +326,7 @@ pub(super) fn Form() -> Element {
                     enter_key_hint: "next".to_string(),
                     value: current.client.address.clone(),
                     error: field_error(&issue_errors, DocumentField::ClientAddress),
+                    announce_error: false,
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.client.address = event.value();
@@ -392,6 +394,7 @@ pub(super) fn Form() -> Element {
                     input_type: "date".to_string(),
                     value: current.issue_date.clone(),
                     error: field_error(&issue_errors, DocumentField::IssueDate),
+                    announce_error: false,
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.issue_date = event.value();
@@ -404,6 +407,7 @@ pub(super) fn Form() -> Element {
                     input_type: "date".to_string(),
                     value: current.event_date.clone(),
                     error: field_error(&issue_errors, DocumentField::EventDate),
+                    announce_error: false,
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.event_date = event.value();
@@ -482,6 +486,7 @@ pub(super) fn Form() -> Element {
                     placeholder: "À réception".to_string(),
                     value: current.payment_terms.clone(),
                     error: field_error(&issue_errors, DocumentField::PaymentTerms),
+                    announce_error: false,
                     oninput: move |event: FormEvent| {
                         apply_edit(draft, edit_generation, |draft| {
                             draft.payment_terms = event.value();
@@ -500,6 +505,13 @@ pub(super) fn Form() -> Element {
             // Validation failures stay on screen (DESIGN.md §6 : les erreurs
             // sont des blocs persistants, jamais des snackbars) until the next
             // edit; the faulty fields above carry the same message.
+            //
+            // This block is also the live region for them: it lists everything
+            // that needs fixing, and `reveal_first_error` puts the focus on the
+            // first faulty control, which reads its own message from the
+            // `aria-describedby` it already has. That is why the fields above
+            // pass `announce_error: false` — they are the only ones in the app
+            // with somewhere better to be announced from.
             if !issue_errors.is_empty() {
                 ErrorBlock {
                     title: "Impossible d’émettre le document".to_string(),

@@ -45,12 +45,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   owns the draft, and a late write would resurrect a document already issued.
   `draft_to_flush` holds that decision alone so it can be tested.
 
-- A failed validation is announced once. The aggregated block and the field's
-  own message both carried `role="alert"`, so a single tap on « Émettre » read
-  the same sentence twice. The block stays the live region — it lists everything
-  that needs fixing — and the field messages go back to being descriptions,
-  reached through the `aria-describedby` they already had and through
-  `reveal_first_error`, which puts focus on the first faulty control.
+- A failed validation is announced once on the brouillon. The aggregated block
+  and the field's own message both carried `role="alert"`, so a single tap on
+  « Émettre » read the same sentence twice — three times counting the focus
+  `reveal_first_error` moves onto the first faulty control. The block stays the
+  live region there, since it lists everything that needs fixing, and those five
+  fields pass `announce_error: false`.
+
+  Only those five. The first attempt took the live region out of `OutlinedField`
+  itself, which silenced the eight other places that set a field error with no
+  aggregated block and no focus move behind them: the recipient on the compose
+  screen, the quantity and the price in the line sheet, the quantity in the
+  catalogue picker, the name and the price in the catalogue sheet, the sender
+  address and the Brevo key in Réglages. For all of those the message *is* the
+  announcement. `announce_error` therefore defaults to true — a caller that sets
+  an error without offering something better cannot silence it by forgetting a
+  prop.
 
 - The heading tree of the two longest screens. The bar's title is the page's
   `h1`; the brouillon then put its own title and all four section titles at `h2`,
