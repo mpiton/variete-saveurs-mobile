@@ -1,0 +1,300 @@
+# Instincts generated from https://github.com/mpiton/variete-saveurs-mobile
+# Generated: 2026-07-28T06:10:01.574Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: variete-saveurs-mobile-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: feat, fix
+
+## Evidence
+
+- 2 commits analyzed
+- Detected conventional commit pattern
+- Examples: feat(preview): tell her how many pages the PDF will have, before she issues it, fix(preview): tag the page count with the preview it belongs to
+
+---
+id: variete-saveurs-mobile-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Commit Length
+
+## Action
+
+Write moderate-length commit messages (~71 characters)
+
+## Evidence
+
+- Average commit message length: 71 chars
+- Based on 2 commits
+
+---
+id: variete-saveurs-mobile-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: variete-saveurs-mobile-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: variete-saveurs-mobile-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: variete-saveurs-mobile-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: variete-saveurs-mobile-instinct-file-naming
+trigger: "When creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct File Naming
+
+## Action
+
+Name the file using camelCase
+
+## Evidence
+
+- Pattern: namingConventions.files = camelCase
+
+---
+id: variete-saveurs-mobile-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Function Naming
+
+## Action
+
+Use camelCase for the function name
+
+## Evidence
+
+- Pattern: namingConventions.functions = camelCase
+
+---
+id: variete-saveurs-mobile-instinct-class-naming
+trigger: "When defining a new class or struct"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Class Naming
+
+## Action
+
+Use PascalCase for the class or struct name
+
+## Evidence
+
+- Pattern: namingConventions.classes = PascalCase
+
+---
+id: variete-saveurs-mobile-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for the constant name
+
+## Evidence
+
+- Pattern: namingConventions.constants = SCREAMING_SNAKE_CASE
+
+---
+id: variete-saveurs-mobile-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern: importStyle = relative
+
+---
+id: variete-saveurs-mobile-instinct-export-style
+trigger: "When exporting modules or functions"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern: exportStyle = named
+
+---
+id: variete-saveurs-mobile-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Git Commit Format
+
+## Action
+
+Use the conventional commit format with a 'feat' or 'fix' prefix and a scope in parentheses
+
+## Evidence
+
+- Pattern: commits.type = conventional
+- Pattern: commits.prefixes = [feat, fix]
+- Example: feat(preview): tell her how many pages the PDF will have, before she issues it
+
+---
+id: variete-saveurs-mobile-instinct-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Commit Length
+
+## Action
+
+Keep the commit message concise, around 71 characters on average
+
+## Evidence
+
+- Pattern: commits.averageLength = 71
+
+---
+id: variete-saveurs-mobile-instinct-test-location
+trigger: "When adding or updating tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: mpiton/variete-saveurs-mobile
+---
+
+# Variete Saveurs Mobile Instinct Test Location
+
+## Action
+
+Place test files in a separate location from source files
+
+## Evidence
+
+- Pattern: architecture.folderStructure.testLocation = separate
+
