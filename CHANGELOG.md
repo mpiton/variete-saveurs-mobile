@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- The text fields own their outline too, which closes the family the previous
+  pass opened. An M3 outlined field *is* its outline — its background is the
+  panel's own white, so there is no fill to fall back on — and it had stayed on
+  the container rail at 1.53:1. Raising the suggestions and the chips first made
+  that visible as an inversion: the field she types into all evening was the
+  faintest control on screen while the list serving it was the clearest. Both
+  `input` and `textarea` take `muted` now: 6.57:1 in a panel, 7.05:1 dark, and
+  5.78:1 on the cream for the history search that sits straight on the page.
+  Focus and error still take the border, which is what a neutral at rest is for.
+
 - Four controls whose outline was their whole affordance are visible again. The
   inactive segment sat at 1.53:1, a catalogue chip at 1.30:1 with a fill the
   same white as the sheet behind it, a client suggestion at 1.30:1, a FAB menu
