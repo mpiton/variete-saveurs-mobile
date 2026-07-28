@@ -2,6 +2,29 @@ use dioxus::prelude::*;
 
 use super::actions::{Button, ButtonVariant, LucideIcon};
 
+/// How many bottom sheets are up, app-wide.
+///
+/// Back closes a sheet before it moves in history, so Android has to be told
+/// whether this app intends to handle Back at all: a callback left enabled
+/// unconditionally costs the predictive back animations
+/// (`android/MainActivity.kt`), and Kotlin cannot see a `<dialog>`. Every sheet
+/// in the app goes through `BottomSheet`, so this is the one place that knows —
+/// a rule rather than a list of the sheets that exist today. A count, not a
+/// flag: a confirmation can open over the catalogue picker.
+#[derive(Clone, Copy)]
+pub struct OpenSheets(pub Signal<usize>);
+
+/// Saturating on the way down. The count is bookkeeping, not truth: a wrong one
+/// costs an animation, while an underflow would panic on her phone.
+fn adjust_open_sheets(mut sheets: Signal<usize>, opened: bool) {
+    let current = *sheets.peek();
+    sheets.set(if opened {
+        current + 1
+    } else {
+        current.saturating_sub(1)
+    });
+}
+
 #[component]
 pub fn BottomSheet(
     id: String,
@@ -12,6 +35,24 @@ pub fn BottomSheet(
     #[props(default)] loading: bool,
     #[props(default)] error: bool,
 ) -> Element {
+    // Before the early return below, not after: a component's hooks have to run
+    // in the same order on every render, and `open` flips.
+    let open_sheets = use_context::<OpenSheets>().0;
+    let mut counted = use_signal(|| false);
+    use_effect(use_reactive!(|open| {
+        if open != *counted.peek() {
+            counted.set(open);
+            adjust_open_sheets(open_sheets, open);
+        }
+    }));
+    // A sheet whose screen goes away while it is still up owes its unit back —
+    // the issue flow replaces the form from under an open confirmation.
+    use_drop(move || {
+        if *counted.peek() {
+            adjust_open_sheets(open_sheets, false);
+        }
+    });
+
     if !open {
         return rsx! {};
     }

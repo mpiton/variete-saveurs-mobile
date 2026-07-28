@@ -23,7 +23,7 @@ use crate::{
 
 use super::{
     catalog::Catalog,
-    components::ErrorBlock,
+    components::{ErrorBlock, OpenSheets},
     compose::{Compose, SendNotice},
     form::Form,
     home::Home,
@@ -297,6 +297,20 @@ fn AppShell() -> Element {
     let history = use_context::<Rc<AppHistory>>();
     let mut menu_open = use_signal(|| false);
     let mut outside_interaction = use_context_provider(|| OutsideInteraction(Signal::new(0_u64)));
+    let open_sheets = use_context_provider(|| OpenSheets(Signal::new(0_usize)));
+
+    // Android takes Back unless this app has a use for it: a sheet to close, or
+    // a route to come back to. It has to be told — Kotlin sees neither a
+    // `<dialog>` nor the router — and an activity callback left enabled costs
+    // the predictive back animations `DESIGN.md §5` has been promising all
+    // along. The optional call is what keeps the desktop `dx serve` working:
+    // there is no bridge there, and nothing to intercept either.
+    let intercepts_back = open_sheets.0() > 0 || can_go_back;
+    use_effect(use_reactive!(|intercepts_back| {
+        let _ = document::eval(&format!(
+            "window.AndroidBack?.setIntercepts({intercepts_back});"
+        ));
+    }));
 
     // Any tap or scroll outside dismisses the menu, like the form's client
     // suggestions already do. The trigger and the panel stop their own taps

@@ -37,11 +37,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   arrived together in #55 and were never read afterwards: the Codex agent roles
   and the inherited instincts describe a harness this repo does not run, and
   `.agents/skills/variete-saveurs-mobile/SKILL.md` was a stale copy of a skill
-  that has since been rewritten by hand. What the bundle was for — a
-  repo-specific skill — survives as
-  `.claude/skills/variete-saveurs-mobile/SKILL.md`, which is kept.
+  that has since been rewritten by hand.
+
+- `.claude/` is no longer tracked, and it is gone from disk with nothing left in
+  it worth keeping. Harness configuration is a property of the machine editing
+  this repository, not of the app it builds.
+
+  The rule that keeps a recreated one out sits in `.git/info/exclude`, not in
+  `.gitignore`: the same place `CLAUDE.md`, `ARCHI.md`, `DESIGN.md` and
+  `PRODUCT.md` already live. A committed ignore entry would publish one
+  developer's choice of tooling to a repository that has no opinion about it.
 
 ### Fixed
+
+- Predictive back actually runs. `DESIGN.md §5` has promised « Back système
+  (geste prédictif) partout » since it was written, and the app never delivered
+  it: `MainActivity` registered an `OnBackPressedCallback` enabled
+  unconditionally, and a callback held at default priority suppresses the system
+  animations — back-to-home, and the long-press preview Android 16 gives
+  three-button navigation — whatever `android:enableOnBackInvokedCallback` says.
+  Back worked; it just never showed her where it was going.
+
+  The callback now stands down when the app has nothing of its own to do with
+  Back: no sheet open, no route to return to. Kotlin can see neither, so the web
+  side reports one boolean over a single-method `@JavascriptInterface`. The
+  sheet half is counted by `BottomSheet` — every sheet in the app goes through
+  it, so a sheet added later is covered without anyone registering it — and the
+  route half is the router's own `can_go_back`. It starts enabled, so the window
+  before the first report behaves exactly as it did before: a missing animation
+  is the safe way to be wrong, a sheet that will not close is not.
+
+  The seam is the part no compiler checks — a global name written in Kotlin and
+  called from Rust — so the guard reads the name out of `MainActivity.kt` and
+  requires it of `app.rs` rather than writing it twice.
 
 - The brouillon is written on the way out, not only every 500 ms. The debounced
   auto-save lives on the screen's scope and Dioxus drops a scope's spawned tasks

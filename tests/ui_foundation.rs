@@ -1134,3 +1134,97 @@ fn a_field_that_carries_an_error_announces_it_unless_its_screen_does_better() {
         "every silenced field must be one the aggregated block speaks for"
     );
 }
+
+/// Back belongs to Android unless this app has a use for it.
+///
+/// An `OnBackPressedCallback` left enabled at default priority suppresses the
+/// predictive back animations — the back-to-home preview, and the long-press
+/// preview Android 16 gives three-button navigation — whatever
+/// `android:enableOnBackInvokedCallback` says. This one was enabled
+/// unconditionally while `DESIGN.md §5` promised « geste prédictif partout », so
+/// the doc and the code disagreed for as long as both existed.
+///
+/// The interesting failure is not the flag but the seam: Kotlin cannot see a
+/// `<dialog>` or the router, the web side cannot see the callback, and the two
+/// meet on a global name no compiler on either side checks. Rename it in one
+/// file and Back silently stops closing sheets. So the name is read out of the
+/// Kotlin and required of the Rust, rather than written twice here.
+#[test]
+fn back_is_only_intercepted_when_the_app_has_something_to_do_with_it() {
+    /// The string literal after `needle`, e.g. a Kotlin `const val`.
+    fn quoted_after<'a>(source: &'a str, needle: &str) -> &'a str {
+        let tail = source
+            .split_once(needle)
+            .unwrap_or_else(|| panic!("no `{needle}` in MainActivity.kt"))
+            .1;
+        let opening = tail.find('"').expect("an opening quote") + 1;
+        let closing = opening + tail[opening..].find('"').expect("a closing quote");
+        &tail[opening..closing]
+    }
+
+    let activity = project_file("android/MainActivity.kt");
+    let shell = project_file("src/ui/app.rs");
+    let sheet = project_file("src/ui/components/feedback.rs");
+
+    // The callback can stand down…
+    assert!(
+        activity.contains("backCallback.isEnabled = intercepts"),
+        "the back callback must be able to stand down, or the animations never run"
+    );
+    // …and it starts enabled, so the window before the first report behaves the
+    // way this activity always did: a missing animation, never a trapped sheet.
+    assert!(
+        activity.contains("object : OnBackPressedCallback(true)"),
+        "the callback starts enabled"
+    );
+
+    // The seam. Both halves are read from the Kotlin, so renaming either one
+    // breaks this test instead of breaking Back on the phone.
+    let global = quoted_after(&activity, "const val BACK_BRIDGE_NAME =");
+    let method = activity
+        .split_once("@JavascriptInterface")
+        .expect("a bridge method")
+        .1
+        .split_once("fun ")
+        .expect("a bridge method name")
+        .1
+        .split('(')
+        .next()
+        .expect("a bridge method name")
+        .trim()
+        .to_string();
+    assert!(
+        activity.contains("addJavascriptInterface(BackBridge(), BACK_BRIDGE_NAME)"),
+        "the bridge must be exposed under the constant this test reads"
+    );
+    let call = format!("window.{global}?.{method}(");
+    assert!(
+        shell.contains(&call),
+        "app.rs must call `{call}` — the bridge Kotlin actually exposes"
+    );
+
+    // What it reports has to be both things Kotlin cannot see. Either alone is a
+    // trap: sheets only, and Back walks off a deep screen; routes only, and it
+    // walks out of an open confirmation.
+    let reported = shell
+        .lines()
+        .find(|line| line.trim().starts_with("let intercepts_back ="))
+        .expect("app.rs must derive what it reports");
+    assert!(
+        reported.contains("open_sheets") && reported.contains("can_go_back"),
+        "Back is intercepted for a sheet or for a route, not for one of them: {reported}"
+    );
+
+    // The count is kept by the component every sheet goes through, so one added
+    // tomorrow is covered without anyone remembering to register it.
+    let registers = sheet
+        .find("use_context::<OpenSheets>()")
+        .expect("BottomSheet must join the count");
+    let early_return = sheet
+        .find("if !open {")
+        .expect("BottomSheet returns early when closed");
+    assert!(
+        registers < early_return,
+        "the hooks must run before the early return, or their order changes when `open` flips"
+    );
+}

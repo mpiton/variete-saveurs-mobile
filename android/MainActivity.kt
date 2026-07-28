@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
@@ -25,6 +26,27 @@ typealias BuildConfig = fr.variete_saveurs.devis_factures.BuildConfig
 class MainActivity : WryActivity() {
     private lateinit var webView: WebView
     private var latestInsets: WindowInsetsCompat? = null
+
+    /**
+     * Back is intercepted only while the app has something of its own to do
+     * with it: a bottom sheet to close, or a route to come back to. At the root
+     * with nothing open it stands down, and Android runs its own predictive
+     * back — the back-to-home preview, and the long-press preview Android 16
+     * gives three-button navigation.
+     *
+     * A callback left enabled at default priority suppresses both, whatever
+     * `android:enableOnBackInvokedCallback` says, and this one was enabled
+     * unconditionally: `DESIGN.md §5` has promised « geste prédictif partout »
+     * since it was written, and the app never delivered it.
+     *
+     * Starts enabled on purpose. Until the web side reports for the first time,
+     * Back behaves exactly as it did before this existed — the safe direction
+     * to be wrong in, since the cost is a missing animation rather than a sheet
+     * that will not close.
+     */
+    private val backCallback = object : OnBackPressedCallback(true) {
+        override fun handleOnBackPressed() = navigateBack()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         window.setBackgroundDrawable(ColorDrawable(chromeColor()))
@@ -46,9 +68,7 @@ class MainActivity : WryActivity() {
             pushInsetsToWebView()
             insets
         }
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = navigateBack()
-        })
+        onBackPressedDispatcher.addCallback(this, backCallback)
     }
 
     override fun onWebViewCreate(webView: WebView) {
@@ -59,6 +79,11 @@ class MainActivity : WryActivity() {
         // The splash video is muted, bundled and started from script; the
         // WebView default would still gate it behind a tap (DESIGN §8).
         webView.settings.mediaPlaybackRequiresUserGesture = false
+        // One method, and all it can do is choose who handles Back. The page is
+        // app-local: the only content that comes from her clients is rendered
+        // inside `srcdoc` iframes sandboxed without `allow-scripts`, so nothing
+        // a client name could carry ever runs in this document.
+        webView.addJavascriptInterface(BackBridge(), BACK_BRIDGE_NAME)
         // evaluateJavascript is a silent no-op until a page is loaded, and the
         // first insets dispatch usually lands before that: replay the cached
         // insets a few times after attach. Later real dispatches (rotation,
@@ -144,6 +169,18 @@ class MainActivity : WryActivity() {
      * `evaluateJavascript` answers on the UI thread a few milliseconds later,
      * so the decision belongs in its callback rather than inline.
      */
+    /**
+     * How the web side hands over the one thing Kotlin cannot see: whether a
+     * sheet is up, and whether the router has anywhere to go back to.
+     */
+    private inner class BackBridge {
+        @JavascriptInterface
+        fun setIntercepts(intercepts: Boolean) {
+            // Called on the WebView's JS thread; `isEnabled` belongs to the UI one.
+            runOnUiThread { backCallback.isEnabled = intercepts }
+        }
+    }
+
     private fun navigateBack() {
         if (!::webView.isInitialized) {
             finish()
@@ -160,6 +197,9 @@ class MainActivity : WryActivity() {
         val CHROME_COLOR_LIGHT: Int = Color.rgb(107, 18, 32)
         val CHROME_COLOR_DARK: Int = Color.rgb(74, 12, 22)
         val REPLAY_DELAYS_MS = longArrayOf(0L, 300L, 1000L, 3000L)
+
+        /** Global the web side calls; `ui/app.rs` names it too. */
+        const val BACK_BRIDGE_NAME = "AndroidBack"
 
         /**
          * Cancels the topmost open sheet and reports whether there was one.
