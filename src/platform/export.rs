@@ -188,6 +188,28 @@ fn compile_reference_pdf(input: &DocumentInput) -> Result<CompiledPdf, ExportErr
     compile_pdf(input, REFERENCE_NUMBER)
 }
 
+/// How many pages the exported PDF will have.
+///
+/// The preview and the file she sends are two renderers (ARCHI §5), and the
+/// preview's continuous strip cannot predict this one. Measured over fourteen
+/// documents: the HTML height disagreed with the real layout twice, in both
+/// directions — 12 lines fit one HTML page and two PDF pages, 58 lines fit three
+/// HTML pages and two PDF pages — so no single page height reconciles them. The
+/// count therefore comes from the compiler that makes the PDF.
+///
+/// It runs before issuing because that is the last moment a bad page break can
+/// still be fixed: émis = figé. `EXPORT_LOCK` is deliberately not taken — that
+/// guard serialises writing files, and this writes none.
+///
+/// It runs the export's own compilation, PDF bytes included. Stopping at the
+/// layout would save a fraction of a sub-second job and would mean naming
+/// `PagedDocument`, which `typst` does not re-export: a whole extra dependency
+/// to skip a step. What matters is that this number and the exported one come
+/// from the same call, so they cannot drift.
+pub fn count_pdf_pages(input: &DocumentInput, number: i64) -> Result<usize, ExportError> {
+    compile_pdf(input, number).map(|pdf| pdf.pages)
+}
+
 fn compile_pdf(input: &DocumentInput, number: i64) -> Result<CompiledPdf, ExportError> {
     let data = TemplateData::new(input, number);
     let json = serde_json::to_vec(&data).map_err(ExportError::Data)?;
@@ -1013,5 +1035,21 @@ mod tests {
         assert!(text.contains("Total du devis"));
         assert!(text.contains("Bon pour accord"));
         assert!(!text.contains("FACTURE"));
+    }
+
+    /// The preview shows this number before she freezes a document, so it has
+    /// to be the number the delivered file actually has. Today both come from
+    /// one call; this is what will notice if a cheaper counting path is ever
+    /// slipped in beside the exporter and drifts from it.
+    #[test]
+    fn the_previewed_page_count_is_the_exported_one() {
+        let base = reference_document();
+        for lines in [3usize, 48] {
+            let mut input = base.clone();
+            input.lines.truncate(lines);
+            let exported = compile_pdf(&input, 10).expect("compile").pages;
+            let previewed = super::count_pdf_pages(&input, 10).expect("count");
+            assert_eq!(previewed, exported, "{lines} lines");
+        }
     }
 }
