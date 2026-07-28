@@ -305,6 +305,41 @@ fn signal<'a>(scheme: &'a str, value: Option<&str>) -> Option<&'a str> {
     resolved.starts_with('#').then_some(resolved)
 }
 
+/// A box that holds text is not locked to a pixel height, and a threshold that
+/// governs text is written in the text's unit.
+///
+/// Same rule as the floating label, three other places. At 200 % system font the
+/// top app bar title was truncated — 318px of « Envoi par email » into 276 —
+/// which cost the screen its only context marker, and DESIGN.md §5 makes those
+/// seven titles normative. « Professionnel » spilled out of its segment, which
+/// was locked to 40px. The line sheet's two columns stayed two columns until
+/// « Descendre » ran past its own button. Only a browser measures the result;
+/// what this pins is that the causes cannot come back.
+#[test]
+fn a_box_that_holds_text_is_not_locked_to_a_pixel_height() {
+    let css = project_file("assets/app.css");
+    let rule = |selector: &str| {
+        rule_block(&css, selector).unwrap_or_else(|| panic!("{selector} must exist"))
+    };
+
+    let title = rule(".top-app-bar__title");
+    assert!(
+        !title.contains("white-space: nowrap") && !title.contains("text-overflow: ellipsis"),
+        "the bar title wraps rather than losing the name of the screen"
+    );
+    for selector in [".segmented-button__label", ".segmented-button__option"] {
+        let segment = rule(selector);
+        assert!(
+            !segment.contains("height: ") || segment.contains("min-height: "),
+            "{selector} must not be locked to a height its label can outgrow"
+        );
+    }
+    assert!(
+        rule(".line-sheet__row").contains("minmax(10rem"),
+        "the column threshold follows the system font, or it never gives way"
+    );
+}
+
 /// Room reserved for text is expressed in that text's own unit, or it stops
 /// being enough the moment the system font grows.
 ///

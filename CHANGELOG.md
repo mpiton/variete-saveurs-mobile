@@ -51,6 +51,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- Three more places gave way at 200 % system font, all the same rule as the
+  floating label: a box that holds text was locked to a pixel height, or a
+  threshold governing text was written in pixels. The top app bar title was
+  truncated — 318px of « Envoi par email » into 276 — costing the screen its
+  only context marker while `DESIGN.md §5` makes those seven titles normative;
+  it wraps now and the bar grows with it. « Professionnel » spilled out of a
+  segment locked to 40px; segments take a `min-height`, wrap, hyphenate an
+  unbreakable word in French rather than overflow, and the label fills its
+  button so the group keeps one height instead of two. The line sheet's row
+  stayed at two columns until « Descendre » ran past its own button; its
+  threshold is `minmax(10rem, 1fr)` now, so it falls back to one column on its
+  own. Swept over all 34 screens at 200 %: nothing is clipped anywhere.
+
+  The audit also flagged the catalogue grid as frozen at two columns. Measured,
+  its chips wrap and nothing overflows, so it is left alone.
+
 - The catalogue asks how many at the moment she says which. Every line copied
   from the catalogue arrived at `quantity: 1`, so « 40 mini burgers » meant
   closing the sheet, tapping the row, clearing the 1 and typing 40 — once per
