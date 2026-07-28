@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Validation keeps the field she must correct above the sticky action bar.
+  After `nearest` stopped Chromium from panning the whole window, a field near
+  the bottom still counted as visible even when the bar covered it.
+  `.screen-scroll` now exposes that occupied band through
+  `scroll-padding-bottom`, so the browser's own focus reveal stops above the
+  chrome. Verified on the converted invoice's « Conditions de paiement » field
+  on a Pixel 6 Pro.
+
 - The bottom chrome stays under nothing. A floating label is `position:
   absolute; z-index: 1`; the sticky bars carried no layer at all, so the label
   won and « Date de l'événement » painted itself over « Aperçu » — every time
