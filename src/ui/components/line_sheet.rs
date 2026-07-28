@@ -104,6 +104,7 @@ pub fn LineSheet(
             OutlinedField {
                 label: "Désignation".to_string(),
                 name: "line-description".to_string(),
+                enter_key_hint: "next".to_string(),
                 value: state.description,
                 oninput: move |event: FormEvent| update_editor(editor, |state| state.description = event.value()),
             }
@@ -111,6 +112,7 @@ pub fn LineSheet(
                 OutlinedField {
                     label: "Quantité".to_string(),
                     name: "line-quantity".to_string(),
+                    enter_key_hint: "next".to_string(),
                     input_mode: "numeric".to_string(),
                     value: state.quantity,
                     error: state.quantity_error,
@@ -122,6 +124,7 @@ pub fn LineSheet(
                 OutlinedField {
                     label: "Prix unitaire".to_string(),
                     name: "line-price".to_string(),
+                    enter_key_hint: "next".to_string(),
                     input_mode: "decimal".to_string(),
                     placeholder: "0,00".to_string(),
                     value: state.price,

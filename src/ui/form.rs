@@ -52,6 +52,7 @@ pub(super) fn Form() -> Element {
     let number_database = database.clone();
     let editor_initial_database = database.clone();
     let editor_database = database.clone();
+    let flush_database = database.clone();
     // The number the emission is about to spend, held while she confirms. It is
     // peeked, never reserved: cancelling costs nothing.
     let mut confirm_number = use_signal(|| None::<i64>);
@@ -114,6 +115,28 @@ pub(super) fn Form() -> Element {
             }
             persist_line_editor(&database, snapshot.as_ref());
         });
+    });
+
+    // Both debounced saves above live on this screen's scope, and Dioxus drops a
+    // scope's spawned tasks when it unmounts (`runtime.rs`, `remove_scope`), so
+    // leaving inside the debounce window took the last keystrokes of a burst
+    // with it — Back, the top bar's menu, either of them. « Aperçu » was the one
+    // path that flushed, and only because it needed the draft on disk for the
+    // next screen. CONTEXT.md calls the brouillon « auto-sauvegardé en continu »
+    // and DESIGN.md §1 puts « la reprise sans perte » above the rest, so it is
+    // written on the way out too.
+    let flush_flow = issue_flow;
+    use_drop(move || {
+        let Some(current) = draft_to_flush(&flush_flow.0.peek(), draft.peek().clone()) else {
+            return;
+        };
+        if let Err(error) = persist_draft(&flush_database, &current) {
+            eprintln!("Draft flush on leave failed: {error}");
+        }
+        // The half-typed line goes with it: same window, same loss, and the
+        // sheet is exactly where Back is most likely to be pressed.
+        let editor = line_editor.peek().as_ref().map(LineEditorState::to_draft);
+        persist_line_editor(&flush_database, editor.as_ref());
     });
 
     // Debounced client lookup: the SQLite query stays out of the input event
@@ -219,7 +242,11 @@ pub(super) fn Form() -> Element {
             h2 { id: "form-draft-title", "{draft_title}" }
 
             section { class: "form-section", aria_labelledby: "form-client-title",
-                h2 { id: "form-client-title", "Client" }
+                // h3, not h2: the bar's title is the screen's h1 and the gold-
+                // ruled title above is its h2, so five sibling h2s left the
+                // longest screen of the app with a flat heading tree — nothing
+                // for TalkBack's heading navigation to descend into.
+                h3 { id: "form-client-title", "Client" }
                 SegmentedButton {
                     label: "Type de client".to_string(),
                     options: vec!["Particulier".to_string(), "Professionnel".to_string()],
@@ -239,6 +266,7 @@ pub(super) fn Form() -> Element {
                     OutlinedField {
                         label: "Nom".to_string(),
                         name: "client-name".to_string(),
+                        enter_key_hint: "next".to_string(),
                         value: current.client.name.clone(),
                         error: field_error(&issue_errors, DocumentField::ClientName),
                         oninput: move |event: FormEvent| {
@@ -294,6 +322,7 @@ pub(super) fn Form() -> Element {
                 OutlinedField {
                     label: "Adresse".to_string(),
                     name: "client-address".to_string(),
+                    enter_key_hint: "next".to_string(),
                     value: current.client.address.clone(),
                     error: field_error(&issue_errors, DocumentField::ClientAddress),
                     oninput: move |event: FormEvent| {
@@ -305,6 +334,7 @@ pub(super) fn Form() -> Element {
                 OutlinedField {
                     label: "Email".to_string(),
                     name: "client-email".to_string(),
+                    enter_key_hint: "next".to_string(),
                     input_type: "email".to_string(),
                     input_mode: "email".to_string(),
                     value: current.client.email.clone().unwrap_or_default(),
@@ -317,6 +347,7 @@ pub(super) fn Form() -> Element {
                 OutlinedField {
                     label: "Téléphone".to_string(),
                     name: "client-phone".to_string(),
+                    enter_key_hint: "next".to_string(),
                     input_type: "tel".to_string(),
                     input_mode: "tel".to_string(),
                     value: current.client.phone.clone().unwrap_or_default(),
@@ -330,6 +361,7 @@ pub(super) fn Form() -> Element {
                     OutlinedField {
                         label: "SIRET".to_string(),
                         name: "client-business-id".to_string(),
+                        enter_key_hint: "next".to_string(),
                         input_mode: "numeric".to_string(),
                         value: current.client.business_id.clone().unwrap_or_default(),
                         oninput: move |event: FormEvent| {
@@ -341,6 +373,7 @@ pub(super) fn Form() -> Element {
                     OutlinedField {
                         label: "Adresse de facturation".to_string(),
                         name: "client-billing-address".to_string(),
+                        enter_key_hint: "next".to_string(),
                         value: current.client.billing_address.clone().unwrap_or_default(),
                         oninput: move |event: FormEvent| {
                             apply_edit(draft, edit_generation, |draft| {
@@ -352,7 +385,7 @@ pub(super) fn Form() -> Element {
             }
 
             section { class: "form-section", aria_labelledby: "form-dates-title",
-                h2 { id: "form-dates-title", "Dates" }
+                h3 { id: "form-dates-title", "Dates" }
                 OutlinedField {
                     label: "Date d’émission".to_string(),
                     name: "issue-date".to_string(),
@@ -380,13 +413,18 @@ pub(super) fn Form() -> Element {
             }
 
             section { class: "form-section", aria_labelledby: "form-lines-title",
-                h2 { id: "form-lines-title", "Prestations" }
+                h3 { id: "form-lines-title", "Prestations" }
                 if current.lines.is_empty() {
                     // « Ajoutez au moins une prestation » used to appear only in
                     // the block at the very bottom, with nothing marking the
                     // section it was about — several screens of scroll away.
                     if let Some(message) = field_error(&issue_errors, DocumentField::Lines) {
-                        p { class: "outlined-field__error", role: "alert", "{message}" }
+                        // No `role="alert"`: the aggregated block below is the
+                        // announcement, and it already lists this sentence. Two
+                        // live regions firing on the same tap read it twice —
+                        // and `reveal_first_error` scrolls this heading into
+                        // view, so it is seen as well as heard.
+                        p { class: "outlined-field__error", "{message}" }
                     } else {
                         p { "Aucune prestation pour l’instant." }
                     }
@@ -437,7 +475,7 @@ pub(super) fn Form() -> Element {
             }
 
             section { class: "form-section", aria_labelledby: "form-terms-title",
-                h2 { id: "form-terms-title", "Conditions" }
+                h3 { id: "form-terms-title", "Conditions" }
                 OutlinedField {
                     label: "Conditions de paiement".to_string(),
                     name: "payment-terms".to_string(),
@@ -574,6 +612,19 @@ pub(super) fn Form() -> Element {
             }
         }
     }
+}
+
+/// What the screen owes the disk on its way out, or `None` when it owes nothing.
+///
+/// An issue in flight owns the draft: the worker clears it right after the
+/// commit, and a late write would resurrect a document that has already been
+/// issued — offered again on the home screen, issued twice. Same guard the
+/// debounced save and « Aperçu » already carry, in one place they can share.
+fn draft_to_flush(phase: &IssuePhase, draft: Option<DocumentInput>) -> Option<DocumentInput> {
+    if blocks_draft_persistence(phase) {
+        return None;
+    }
+    draft
 }
 
 fn apply_edit(
@@ -933,10 +984,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::{
-        DatabaseContext, LineEditorState, cents_to_euro_input, client_kind_for_index,
-        client_kind_index, draft_title, fill_client_from_suggestion, issue_label, line_from_editor,
-        line_row_label, load_client_suggestions, move_line, optional_text, parse_quantity,
-        price_error, quantity_error, suggestion_detail, suggestion_query,
+        DatabaseContext, IssuePhase, LineEditorState, cents_to_euro_input, client_kind_for_index,
+        client_kind_index, draft_title, draft_to_flush, fill_client_from_suggestion, issue_label,
+        line_from_editor, line_row_label, load_client_suggestions, move_line, optional_text,
+        parse_quantity, price_error, quantity_error, suggestion_detail, suggestion_query,
     };
     use crate::domain::{
         db::{issue_document, open_database},
@@ -1149,6 +1200,33 @@ mod tests {
             ..line
         };
         assert!(line_row_label(0, &untitled).starts_with("Ligne 1 : Sans désignation (Salé),"));
+    }
+
+    /// The debounced save dies with the screen, so leaving flushes what it had
+    /// not written yet — except while the issue chain owns the draft, where a
+    /// late write would resurrect a document that has already been issued.
+    #[test]
+    fn the_flush_on_leave_writes_the_draft_unless_an_issue_owns_it() {
+        let draft = valid_quote_input();
+
+        for phase in [
+            IssuePhase::Idle,
+            IssuePhase::Invalid(Vec::new()),
+            IssuePhase::Failed("erreur".to_string()),
+        ] {
+            assert_eq!(
+                draft_to_flush(&phase, Some(draft.clone())),
+                Some(draft.clone()),
+                "{phase:?} does not own the draft"
+            );
+        }
+
+        assert_eq!(
+            draft_to_flush(&IssuePhase::Running, Some(draft.clone())),
+            None,
+            "the worker clears the draft right after the commit"
+        );
+        assert_eq!(draft_to_flush(&IssuePhase::Idle, None), None);
     }
 
     #[test]

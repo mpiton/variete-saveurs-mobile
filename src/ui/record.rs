@@ -170,6 +170,22 @@ pub(super) fn Record(id: i64) -> Element {
     let mut send_notice_on_drop = send_notice;
     use_drop(move || send_notice_on_drop.0.set(None));
 
+    // The paper, rendered once per document instead of once per render. The
+    // fiche re-renders on every snackbar tick, share phase and sheet toggle,
+    // and `render_document_html` builds the whole A4 each time — 180 KB of logo
+    // through a byte-at-a-time base64 among it, before `LOGO_DATA_URI`.
+    //
+    // Tagged by `id` through `use_reactive!` for the reason `PageCount` gives in
+    // `preview.rs`: the router leaves nowhere to key `Record` by its document,
+    // and Dioxus keeps the instance alive when only the parameter changes, so an
+    // untagged cache would paint one document's paper under another's number.
+    let thumbnail_database = database.clone();
+    let thumbnail_html = use_memo(use_reactive!(|id| {
+        load_from_context(&thumbnail_database, id)
+            .map(|data| render_document_html(&data.document.input, data.document.number))
+            .unwrap_or_default()
+    }));
+
     match load_from_context(&database, id) {
         Err(error) => {
             let (title, message) = error_message(error);
@@ -197,7 +213,6 @@ pub(super) fn Record(id: i64) -> Element {
             let issue_date = format_date(&input.issue_date);
             let event_date = format_date(&input.event_date);
             let total = format_eur(document.total_cents);
-            let thumbnail_html = render_document_html(input, document.number);
             let payment_terms = input.payment_terms.trim();
             let contact = [client.email.as_deref(), client.phone.as_deref()]
                 .into_iter()
@@ -248,7 +263,7 @@ pub(super) fn Record(id: i64) -> Element {
                                     title: "Aperçu réduit du document",
                                     "sandbox": "allow-same-origin",
                                     tabindex: "-1",
-                                    srcdoc: thumbnail_html,
+                                    srcdoc: thumbnail_html(),
                                 }
                             }
                             div { class: "record-head__identity",

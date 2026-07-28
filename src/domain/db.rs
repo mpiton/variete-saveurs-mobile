@@ -382,12 +382,15 @@ pub fn issue_document(
     })
 }
 
-/// Issued documents, newest first, narrowed by kind and by client name.
+/// Issued documents, newest first, narrowed by kind and by client name or number.
 ///
-/// She looks for « le devis de la mairie » — the client name is the handle she
-/// has, so it is the only thing `search` matches. The comparison runs through
+/// She looks for « le devis de la mairie » — the client name is one handle she
+/// has. The other is the number: it is the headline of every card, it is what
+/// the paper in her hand carries, and it is what a client quotes back over the
+/// phone, so « 12 » finds « Devis n° 12 ». The name comparison runs through
 /// `normalize_client_search`, the same accent- and case-folding the form's
-/// autocomplete uses, so « eglise » finds « Église » on both screens.
+/// autocomplete uses, so « eglise » finds « Église » on both screens; digits
+/// pass through that folding unchanged.
 ///
 /// Filtering in Rust rather than in SQL: SQLite's `LIKE` is ASCII-only for case
 /// folding and knows nothing about accents, and at this volume (a few documents
@@ -419,7 +422,10 @@ pub fn list_documents(
     };
     Ok(documents
         .into_iter()
-        .filter(|document| normalize_client_search(&document.input.client.name).contains(&needle))
+        .filter(|document| {
+            normalize_client_search(&document.input.client.name).contains(&needle)
+                || document.number.to_string().contains(&needle)
+        })
         .collect())
 }
 
@@ -750,6 +756,55 @@ mod tests {
                 .expect("no search")
                 .len(),
             2
+        );
+    }
+
+    /// The number is the headline of every card and the thing printed on the
+    /// paper she is holding, and the search could not see it: « 12 » answered
+    /// « aucun document » on a history that contained « Devis n° 12 ».
+    #[test]
+    fn the_search_matches_the_document_number() {
+        let (_file, mut connection) = initialized_connection();
+        persist_document(
+            &mut connection,
+            12,
+            &document_input(DocumentKind::Quote, "Église Saint-Rémy"),
+            None,
+            "2026-07-22T10:00:00Z",
+        );
+        persist_document(
+            &mut connection,
+            13,
+            &document_input(DocumentKind::Quote, "Boulangerie Martin"),
+            None,
+            "2026-07-22T11:00:00Z",
+        );
+
+        let found = list_documents(&connection, None, Some("12")).expect("search by number");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].number, 12);
+
+        // Trimmed like any other needle, and the name search still works beside
+        // it — one field, two handles.
+        assert_eq!(
+            list_documents(&connection, None, Some(" 13 "))
+                .expect("search a padded number")
+                .len(),
+            1
+        );
+        assert_eq!(
+            list_documents(&connection, None, Some("boulangerie"))
+                .expect("search by name")
+                .len(),
+            1
+        );
+
+        // A number nobody spent finds nothing, rather than falling back to
+        // showing everything.
+        assert!(
+            list_documents(&connection, None, Some("99"))
+                .expect("search an unspent number")
+                .is_empty()
         );
     }
 
