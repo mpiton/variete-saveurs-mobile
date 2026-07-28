@@ -561,4 +561,16 @@ mod tests {
             assert!(draft.lines.is_empty());
         }
     }
+
+    /// The link neither half checked on its own: home stamps a date on the
+    /// draft it creates, and `is_blank` decides whether replacing that draft
+    /// needs a confirmation. While the stamp counted as content the two
+    /// disagreed, so DESIGN.md §6's silence rule could never fire and the
+    /// second « + » of the evening asked her to confirm destroying nothing.
+    #[test]
+    fn the_draft_home_creates_is_blank_so_it_is_replaced_in_silence() {
+        for kind in [DocumentKind::Quote, DocumentKind::Invoice] {
+            assert!(blank_draft(kind, "2026-07-26").is_blank());
+        }
+    }
 }

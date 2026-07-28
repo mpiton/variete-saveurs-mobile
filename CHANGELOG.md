@@ -191,6 +191,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The fiche appears when the document exists, not when its files do. « Émettre »
+  committed the number, cleared the draft, then compiled the PDF and rendered
+  the PNG before publishing anything — so for the length of a Typst compile
+  (~1 s) she sat on a form whose draft had already been deleted, with a spinner
+  inside a button as the only sign of life, at the one moment in the app that
+  cannot be undone. Long enough to read as a hang, and a force-close there hides
+  an emission that already happened. The emission now publishes the fiche as
+  soon as the number is committed and exports behind it, which also unsticks the
+  « Génération du PDF en cours… » line the fiche has carried since it was
+  written for this moment — it was unreachable, only a manual re-export ever set
+  that phase. A failed export and the « Devis n° 10 émis » snackbar no longer
+  land in the same frame either.
+
+- A draft she never typed in is replaced without asking, as DESIGN.md §6 says.
+  The rule was there and unreachable: `is_blank` counted the issue date as
+  content, and every draft is created with today's date already stamped, so no
+  freshly opened draft was ever blank. Creating a devis, going back, then
+  creating a facture raised « Devis — 0,00 € sera remplacé par un document vide,
+  sans retour possible » over an empty document — on all three overwrite paths,
+  three times in an evening of several documents. The one sheet that has to be
+  believed was the one she was learning to dismiss, and there is no undo behind
+  it. The issue date is machine-stamped and cannot say whether she wrote
+  anything; the event date, which is always her choice, still counts. Three
+  tests changed sides, and a new one ties the two halves together — the draft
+  the home actually creates is now asserted blank, which is the check neither
+  `models.rs` nor `home.rs` was making on its own.
+
 - The « Remplacer le brouillon ? » sheets say what they destroy. All three
   described what was *arriving* — an empty document, the pre-filled invoice, a
   copy — and never what was leaving, which is the only thing actually lost and

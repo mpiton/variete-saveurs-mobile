@@ -1,8 +1,10 @@
 //! End-to-end issue flow (ARCHI §4) shared by the form's and the draft
 //! preview's « Émettre » buttons: validate → issue transactionally (number +
-//! insert, committed) → clear the draft → export PDF/PNG. Emission and export
-//! are decoupled: a failed export never rolls the number back, the fiche
-//! offers a re-export instead. The blocking work runs on a worker thread
+//! insert, committed) → clear the draft → publish the fiche → export PDF/PNG.
+//! Emission and export are decoupled in both directions: a failed export never
+//! rolls the number back (the fiche offers a re-export instead), and a running
+//! export never holds the fiche back — she reaches her document as soon as it
+//! exists, not when its files do. The blocking work runs on a worker thread
 //! (Typst compile takes ~1 s) and publishes its phases on a sync signal
 //! provided at the app root; `AppShell` turns them into navigation.
 
@@ -93,26 +95,48 @@ pub(super) fn start_issue(mut flow: IssueFlow, database: DatabaseContext, input:
     }
     flow.0.set(IssuePhase::Running);
     std::thread::spawn(move || {
-        let phase = match catch_unwind(AssertUnwindSafe(|| issue_draft(&database, &input))) {
+        let outcome = match catch_unwind(AssertUnwindSafe(|| issue_draft(&database, &input))) {
             Err(payload) => {
                 eprintln!("Issue chain panicked: {payload:?}");
-                IssuePhase::Failed(
+                Err(IssuePhase::Failed(
                     "Échec inattendu de l'émission (détail dans les logs).".to_string(),
-                )
+                ))
             }
-            Ok(Err(IssueFailure::Invalid(errors))) => IssuePhase::Invalid(errors),
-            Ok(Err(IssueFailure::Failed(message))) => IssuePhase::Failed(message),
-            Ok(Ok(document)) => {
-                let (export, _) = run_export(&document);
-                let notice = Some(issued_notice(&document));
-                IssuePhase::Issued(Box::new(IssuedState {
-                    document,
-                    export,
-                    notice,
-                }))
+            Ok(Err(IssueFailure::Invalid(errors))) => Err(IssuePhase::Invalid(errors)),
+            Ok(Err(IssueFailure::Failed(message))) => Err(IssuePhase::Failed(message)),
+            Ok(Ok(document)) => Ok(document),
+        };
+        let document = match outcome {
+            Ok(document) => document,
+            Err(phase) => {
+                write_from_worker(flow.0, |current| *current = phase);
+                return;
             }
         };
-        write_from_worker(flow.0, |current| *current = phase);
+        // The number is spent and the draft is cleared the moment `issue_draft`
+        // returns, so the fiche is published here rather than after the ~1 s
+        // Typst compile. Waiting left her on a form whose draft no longer
+        // existed, with a button spinner for company, at the one moment in the
+        // app that cannot be undone — long enough to read as a hang, and a
+        // force-close there hides an emission that already happened. It also
+        // delivered « Devis n° 10 émis » and « PDF non généré » in the same
+        // frame. The export now runs behind the fiche, which has rendered
+        // `ExportPhase::Running` since it was written for this (`record.rs`);
+        // navigation keys on the document id, so the later result mutates the
+        // live phase instead of routing again (`app.rs`).
+        let published = document.clone();
+        let notice = Some(issued_notice(&document));
+        write_from_worker(flow.0, |current| {
+            *current = IssuePhase::Issued(Box::new(IssuedState {
+                document: published,
+                export: ExportPhase::Running,
+                notice,
+            }));
+        });
+        let (export, _) = run_export(&document);
+        update_issued(flow, document.id, |state| {
+            state.export = export;
+        });
     });
 }
 
