@@ -262,7 +262,22 @@ summary:focus-visible {
     min-width: 184px;
     gap: 2px;
     padding: var(--space-xs);
-    border: 1px solid var(--color-border);
+    /* Ink, not the container rail. This panel floats over three different
+       backgrounds at once — it overlaps the bar by `--space-xs` and spills onto
+       the page and onto whatever card is under it — and `border` left it at
+       1.34:1 on the cream, 1.53:1 on a card and 1.35:1 on the dark chrome. In
+       the dark scheme nothing carried it at all: the elevated fill measures
+       1.02:1 against the chrome, and the shadow is pure black on a near-black
+       page, so it is inert.
+
+       No single palette value can give it a shape in the light scheme, because
+       it sits on #6B1220 and on #FFFFFF at the same time: clearing 3:1 on both
+       needs a relative luminance between 0.207 and 0.30, and the palette holds
+       nothing there (gold 0.35, muted 0.11). So the two signals split the work
+       the way DESIGN.md §2 already splits them for the filled button on the
+       bar — the fill carries the chrome (12.12:1 in light), the edge carries
+       the content (11.09 to 12.60:1 light, 12.16:1 at worst in dark). */
+    border: 1px solid var(--color-ink);
     border-radius: var(--radius-panel);
     background: var(--color-elevated);
     box-shadow: 0 2px 8px var(--color-shadow);
