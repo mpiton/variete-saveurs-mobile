@@ -284,9 +284,13 @@ fn declaration<'a>(block: &'a str, property: &str) -> Option<&'a str> {
 
 /// A declared value as a colour in one scheme. `transparent`, or no declaration
 /// at all, means the signal is deliberately absent and cannot carry the shape.
+/// The `var()` is found anywhere in the value, so a shorthand such as
+/// `border: 1px solid var(--color-ink)` resolves like a longhand does.
 fn signal<'a>(scheme: &'a str, value: Option<&str>) -> Option<&'a str> {
-    let name = value?.trim().strip_prefix("var(")?.strip_suffix(')')?;
-    let mut resolved = css_token(scheme, name.trim());
+    let value = value?;
+    let open = value.find("var(")? + "var(".len();
+    let close = open + value[open..].find(')')?;
+    let mut resolved = css_token(scheme, value[open..close].trim());
     // Tokens alias tokens: `--color-on-chrome-primary-edge` is
     // `var(--color-on-chrome)` in the light scheme and `transparent` in the dark.
     for _ in 0..8 {
@@ -299,6 +303,47 @@ fn signal<'a>(scheme: &'a str, value: Option<&str>) -> Option<&'a str> {
         resolved = css_token(scheme, alias.trim());
     }
     resolved.starts_with('#').then_some(resolved)
+}
+
+/// The top app bar's menu is the one panel that floats free: it overlaps the
+/// bar by `--space-xs` and spills over the page and over whatever card sits
+/// beneath it, so it has to keep a shape against all three at once. The bottom
+/// sheets are not in this guard — they arrive with a scrim, which separates
+/// them by construction.
+///
+/// It failed on three of four hosts in the light scheme and on all four in the
+/// dark one, where the elevated fill measures 1.02:1 against the chrome and the
+/// shadow is pure black on a near-black page. Same rule as the buttons, same
+/// blind spot: DESIGN.md §2 was written for the chrome bar and applied there.
+#[test]
+fn the_floating_menu_keeps_a_shape_over_everything_it_covers() {
+    let css = project_file("assets/app.css");
+    let dark = dark_block(&css);
+    let light = css.replace(dark, "");
+    let menu = rule_block(&css, ".app-menu").expect(".app-menu must declare a rule");
+
+    // Everything it can be painted over: the bar it hangs from, the page, a
+    // card, and a passive zone.
+    const HOSTS: [&str; 4] = [
+        "--color-chrome",
+        "--color-bg",
+        "--color-surface",
+        "--color-surface-dim",
+    ];
+
+    for (scheme_name, scheme) in [("clair", light.as_str()), ("sombre", dark)] {
+        let fill = signal(scheme, declaration(menu, "background"));
+        let edge = signal(scheme, declaration(menu, "border"));
+        for host_token in HOSTS {
+            let host = css_token(scheme, host_token);
+            let fill_ratio = fill.map_or(0.0, |value| contrast_ratio(value, host));
+            let edge_ratio = edge.map_or(0.0, |value| contrast_ratio(value, host));
+            assert!(
+                fill_ratio.max(edge_ratio) >= 3.0,
+                "{scheme_name} sur {host_token}: the menu has no shape (aplat {fill_ratio:.2}:1, bord {edge_ratio:.2}:1)"
+            );
+        }
+    }
 }
 
 /// Every `.m3-button--<variant>` the sheet declares, so a variant added later

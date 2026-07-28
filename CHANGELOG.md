@@ -51,6 +51,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destruction of an empty draft is a question with nothing at stake, and it is
   the same question that could not name its object.
 
+- The top app bar's menu keeps a shape over everything it covers. It is the one
+  panel that floats free — it overlaps the bar and spills onto the page and onto
+  whatever card is beneath it — and the container rail left it at 1.34:1 on the
+  cream and 1.53:1 on a card. In the dark scheme nothing carried it at all: the
+  elevated fill measures 1.02:1 against the dark chrome and the shadow is pure
+  black on a near-black page, so it is inert. No single palette value fixes the
+  light scheme, since clearing 3:1 on both `#6B1220` and `#FFFFFF` needs a
+  relative luminance between 0.207 and 0.30 and the palette holds nothing there.
+  The edge is `ink` now, so the fill carries the chrome and the edge carries the
+  content: measured at render against the background actually painted beneath,
+  12.12 / 11.09 / 12.60:1 light and 12.43 / 15.01 / 13.74:1 dark, where dark was
+  1.35 / 1.63 / 1.49:1.
+
 - The preview says how many pages the exported PDF will have, before she issues
   it. The screen renders `render.rs` HTML — one continuous strip with no pages —
   while the file she sends is laid out by Typst (ARCHI §5), so a quote that fell
