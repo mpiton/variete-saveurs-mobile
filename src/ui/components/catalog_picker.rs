@@ -88,13 +88,37 @@ fn picked_quantity(typed: &str) -> Result<i64, String> {
 /// section is scrolled rather than the field, because at 200 % system font the
 /// sheet is 80 % of the screen and « Ajouter » sits below the fold — focusing
 /// the field alone would leave the button she needs next off screen.
+///
+/// Scrolled again once the keyboard has landed. The focus below is what raises
+/// it, so the first scroll settles a layout that is about to change: for an
+/// item low in the picker the prompt ended up under the keyboard, « Quantité »
+/// and « Ajouter » with it, and she typed a quantity she could not see. The
+/// second pass runs on the viewport the keyboard actually left, where the
+/// prompt is genuinely out of view and `nearest` has something to do — and
+/// `nearest` is the only option that may be used here, for the reason spelled
+/// out in `MainActivity.pushInsetsToWebView`: `center` asks for a scroll the
+/// container cannot give and the engine pans the whole window to make up the
+/// difference.
 fn reveal_quantity_prompt() {
     let _ = dioxus::document::eval(
         "(() => {
-             const prompt = document.querySelector('.catalog-picker__prompt');
-             if (prompt) { prompt.scrollIntoView({ block: 'nearest' }); }
+             const bring = () => {
+                 const prompt = document.querySelector('.catalog-picker__prompt');
+                 if (prompt) { prompt.scrollIntoView({ block: 'nearest' }); }
+             };
              const field = document.getElementById('field-catalog-quantity');
              if (field) { field.focus({ preventScroll: true }); }
+             bring();
+             const viewport = window.visualViewport;
+             if (!viewport) { return; }
+             // At most twice: whichever of the two fires first takes the
+             // listener away, so a keyboard that never comes costs one scroll.
+             const again = () => {
+                 viewport.removeEventListener('resize', again);
+                 bring();
+             };
+             viewport.addEventListener('resize', again);
+             setTimeout(again, 400);
          })()",
     );
 }
