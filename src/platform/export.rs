@@ -70,8 +70,8 @@ fn file_label(path: &Path) -> String {
 
 /// Exports an issued document as `{devis|facture}-{n}.pdf` and `.png` under
 /// `exports/` (ARCHI §4). Existing files are kept as-is (issued documents are
-/// frozen); only missing files are regenerated, so the aperçu's « Exporter »
-/// action doubles as the re-export path.
+/// frozen); only missing files are regenerated, so « Partager » and « Envoyer »
+/// double as the re-export path.
 pub fn export_document(input: &DocumentInput, number: i64) -> Result<DocumentExport, ExportError> {
     // ponytail: one export at a time (reference or document); revisit only if
     // production needs parallel jobs.

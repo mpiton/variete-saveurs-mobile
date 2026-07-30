@@ -2,7 +2,7 @@
 //! preview's « Émettre » buttons: validate → issue transactionally (number +
 //! insert, committed) → clear the draft → publish the fiche → export PDF/PNG.
 //! Emission and export are decoupled in both directions: a failed export never
-//! rolls the number back (the fiche offers a re-export instead), and a running
+//! rolls the number back (« Partager » regenerates the missing files), and a running
 //! export never holds the fiche back — she reaches her document as soon as it
 //! exists, not when its files do. The blocking work runs on a worker thread
 //! (Typst compile takes ~1 s) and publishes its phases on a sync signal
@@ -12,7 +12,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::time::Duration;
 
 use dioxus::prelude::*;
-use tokio::time::sleep;
 
 use crate::domain::{
     db::{IssueError, clear_draft, issue_document},
@@ -22,9 +21,6 @@ use crate::domain::{
 use crate::platform::export::{DocumentExport, export_document};
 
 use super::app::DatabaseContext;
-
-/// How long a transient snackbar stays up (DESIGN.md §6).
-const NOTICE_DURATION: Duration = Duration::from_secs(4);
 
 /// App-wide issue flow state, provided by `app()` and consumed by the form
 /// (errors + loading), the preview (loading) and the fiche (notice + export
@@ -255,84 +251,6 @@ fn run_export(document: &Document) -> (ExportPhase, Option<DocumentExport>) {
             (ExportPhase::Failed, None)
         }
     }
-}
-
-/// State of a manual export job (fiche « Exporter le PDF / PNG », aperçu
-/// « Exporter »), driven from a worker thread: a failure is a persistent
-/// block (DESIGN.md §6), a success a snackbar naming the files.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) enum ExportJobState {
-    Ready,
-    Running,
-    Done(String),
-    Failed(String),
-}
-
-/// Manual export of an issued document; doubles as the re-export path —
-/// `export_document` keeps existing files and regenerates only the missing
-/// ones (ARCHI §4). Same worker shape as the issue chain; the phase guards
-/// the double-tap.
-pub(super) fn start_export(
-    mut state: Signal<ExportJobState, SyncStorage>,
-    input: DocumentInput,
-    number: i64,
-) {
-    if matches!(&*state.read(), ExportJobState::Running) {
-        return;
-    }
-    state.set(ExportJobState::Running);
-    let worker = std::thread::Builder::new().spawn(move || {
-        let outcome = catch_unwind(AssertUnwindSafe(|| export_document(&input, number)));
-        let next = match outcome {
-            Ok(Ok(export)) => {
-                ExportJobState::Done(format!("Export terminé : {}", export.files_label()))
-            }
-            Ok(Err(error)) => {
-                eprintln!("Document export failed: {error}");
-                ExportJobState::Failed(error.to_string())
-            }
-            Err(payload) => {
-                eprintln!("Document export panicked: {payload:?}");
-                ExportJobState::Failed(
-                    "Échec inattendu de l'export du document (détail dans les logs).".to_string(),
-                )
-            }
-        };
-        write_from_worker(state, |current| *current = next);
-    });
-    // Fallible spawn: a resource-starved OS must not panic the UI thread —
-    // the job goes straight to its terminal failure state instead of
-    // staying `Running` forever.
-    if let Err(error) = worker {
-        eprintln!("Export worker could not start: {error}");
-        write_from_worker(state, |current| {
-            *current =
-                ExportJobState::Failed("Impossible de démarrer l'export du document.".to_string())
-        });
-    }
-}
-
-/// Snackbars are transient (DESIGN.md §6): a successful manual-export
-/// notice clears itself after a few seconds, while a failure block stays.
-/// The timer only ever clears ITS result — a newer one survives an older
-/// timer.
-pub(super) fn use_export_notice_dismiss(mut state: Signal<ExportJobState, SyncStorage>) {
-    use_effect(move || {
-        let expected = match &*state.read() {
-            ExportJobState::Done(message) => Some(message.clone()),
-            _ => None,
-        };
-        if let Some(expected) = expected {
-            spawn(async move {
-                sleep(NOTICE_DURATION).await;
-                let still_current =
-                    matches!(&*state.read(), ExportJobState::Done(message) if *message == expected);
-                if still_current {
-                    state.set(ExportJobState::Ready);
-                }
-            });
-        }
-    });
 }
 
 /// Snackbar confirmation right after the fiche appears (« Devis n° 10 émis »).
