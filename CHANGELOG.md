@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Les conditions de paiement saisies sur un devis arrivent enfin sur le papier.
+  Le formulaire propose le champ pour les deux natures de document, mais les
+  deux moteurs de rendu — l'aperçu HTML et le Typst qui imprime — écrivaient une
+  phrase en dur dans le bloc « Conditions » du devis : « par virement la veille
+  de la récupération…, ou en espèces le jour même ». Seule la facture lisait la
+  valeur. Un devis laissé sans conditions garde cette phrase, donc les devis
+  déjà émis se ré-exportent à l'identique.
+
 ## [0.2.0] - 2026-07-28
 
 ### Added

@@ -179,7 +179,7 @@
     #text(font: serif, size: 9.4pt, weight: "bold", fill: red)[Conditions]
     #v(3pt)
     - *Offre valable jusqu'au :* #data.validity-end.
-    - *Règlement :* par virement la veille de la récupération (#data.event-date), ou en espèces le jour même.
+    - *Règlement :* #if data.payment-terms == "" [par virement la veille de la récupération (#data.event-date), ou en espèces le jour même] else [#data.payment-terms].
     - Établissement du présent devis : *gratuit*.
   ])
 
