@@ -532,7 +532,7 @@ impl TemplateData {
             number,
             issue_date: format_date(&input.issue_date),
             validity_end: validity_end(&input.issue_date),
-            payment_terms: input.payment_terms.clone(),
+            payment_terms: input.payment_terms.trim().to_string(),
             total: format_eur(input.total_cents()),
             total_label: if is_quote {
                 "Total du devis".to_string()
@@ -720,6 +720,54 @@ mod tests {
             "quote subtitle must not appear on an invoice"
         );
         assert!(!text.contains("Bon pour accord"));
+    }
+
+    // Same regression as `render::renders_quote_payment_terms`, on the engine
+    // that actually prints: the Typst quote card hardcoded the house sentence.
+    #[test]
+    fn compiles_a_quote_with_her_own_payment_terms() {
+        let mut input = reference_document();
+        input.payment_terms = "Acompte de 30 % à la commande".to_string();
+
+        let pdf = compile_pdf(&input, 7).expect("quote PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(
+            text.contains("Règlement : Acompte de 30 % à la commande."),
+            "typed payment terms missing: {text}"
+        );
+        assert!(!text.contains("par virement la veille de la récupération"));
+    }
+
+    // A JSON string interpolated into Typst markup is shown, not re-parsed, so
+    // what she types cannot become markup. That is the whole reason the quote's
+    // Règlement line can carry free text at all — pin it down.
+    #[test]
+    fn shows_typst_syntax_in_payment_terms_as_plain_text() {
+        let mut input = reference_document();
+        input.payment_terms = "*30 %* #panic() $x$ [a]".to_string();
+
+        let pdf = compile_pdf(&input, 7).expect("quote PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(
+            text.contains("Règlement : *30 %* #panic() $x$ [a]."),
+            "Typst syntax was not shown verbatim: {text}"
+        );
+    }
+
+    #[test]
+    fn compiles_a_quote_with_the_house_payment_sentence_when_blank() {
+        let mut input = reference_document();
+        input.payment_terms = " ".to_string();
+
+        let pdf = compile_pdf(&input, 7).expect("quote PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(
+            text.contains("par virement la veille de la récupération"),
+            "house payment sentence missing: {text}"
+        );
     }
 
     #[test]

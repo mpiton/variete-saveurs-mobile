@@ -32,7 +32,7 @@ pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
     let issue_date = escape(&format_date(&input.issue_date));
     let event_date = escape(&format_date(&input.event_date));
     let validity_end = validity_end_date(&input.issue_date);
-    let payment_terms = escape(&input.payment_terms);
+    let payment_terms = escape(input.payment_terms.trim());
     let total = format_eur(input.total_cents());
     let total_label = if is_quote {
         "Total du devis".to_string()
@@ -179,7 +179,13 @@ pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
     .expect("writing to String cannot fail");
 
     if is_quote {
-        write_quote_conditions_and_signature(&mut html, &validity_end, &issue_date, &event_date);
+        write_quote_conditions_and_signature(
+            &mut html,
+            &validity_end,
+            &issue_date,
+            &event_date,
+            &payment_terms,
+        );
     } else {
         write_invoice_payment(&mut html, input, &event_date, &payment_terms, &total);
     }
@@ -263,10 +269,21 @@ fn write_quote_conditions_and_signature(
     validity_end: &Option<String>,
     issue_date: &str,
     event_date: &str,
+    payment_terms: &str,
 ) {
     let validity_line = match validity_end {
         Some(end) => format!("<b>Offre valable jusqu'au :</b> {end}."),
         None => format!("<b>Validité de l'offre :</b> 30 jours à compter du {issue_date}."),
+    };
+    // The form offers « Conditions de paiement » on quotes too, so what she
+    // types has to reach the paper. Left blank, the quote keeps the house
+    // sentence it has always carried — issued quotes re-export unchanged.
+    let payment_line = if payment_terms.is_empty() {
+        format!(
+            "<b>Règlement :</b> par virement la veille de la récupération ({event_date}), ou en espèces le jour même."
+        )
+    } else {
+        format!("<b>Règlement :</b> {payment_terms}.")
     };
     write!(
         html,
@@ -275,7 +292,7 @@ fn write_quote_conditions_and_signature(
     <div class="title">Conditions</div>
     <ul>
       <li>{validity_line}</li>
-      <li><b>Règlement :</b> par virement la veille de la récupération ({event_date}), ou en espèces le jour même.</li>
+      <li>{payment_line}</li>
       <li>Établissement du présent devis : <b>gratuit</b>.</li>
     </ul>
   </section>
@@ -436,6 +453,32 @@ mod tests {
         assert_eq!(html.matches("TVA non applicable").count(), 1);
     }
 
+    // The form offers « Conditions de paiement » on quotes as well, and what
+    // she typed used to stop at the screen: the quote always printed the house
+    // sentence.
+    #[test]
+    fn renders_quote_payment_terms() {
+        let mut doc = document(DocumentKind::Quote);
+        doc.payment_terms = "Acompte de 30 % à la commande".to_string();
+
+        let html = render_document_html(&doc, 9);
+
+        assert!(html.contains("<b>Règlement :</b> Acompte de 30 % à la commande."));
+        assert!(!html.contains("par virement la veille de la récupération"));
+    }
+
+    #[test]
+    fn falls_back_to_the_house_payment_sentence_on_a_blank_quote() {
+        let mut doc = document(DocumentKind::Quote);
+        doc.payment_terms = " \n ".to_string();
+
+        let html = render_document_html(&doc, 9);
+
+        assert!(html.contains(
+            "<b>Règlement :</b> par virement la veille de la récupération (19/07/2026), ou en espèces le jour même."
+        ));
+    }
+
     #[test]
     fn renders_invoice_payment_terms() {
         let html = render_document_html(&document(DocumentKind::Invoice), 12);
@@ -533,7 +576,15 @@ mod tests {
 
     #[test]
     fn escapes_all_user_text_in_html() {
-        let mut doc = document(DocumentKind::Invoice);
+        // Both natures: the payment terms reach the quote's « Conditions » card
+        // and the invoice's « Règlement » block by two different writers.
+        for kind in [DocumentKind::Quote, DocumentKind::Invoice] {
+            escapes_all_user_text_for(kind);
+        }
+    }
+
+    fn escapes_all_user_text_for(kind: DocumentKind) {
+        let mut doc = document(kind);
         doc.issue_date = "<issue>".to_string();
         doc.event_date = "<event>".to_string();
         doc.payment_terms = "<payment>".to_string();
