@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-30
+
 ### Fixed
 
 - Les conditions de paiement saisies sur un devis arrivent enfin sur le papier.
