@@ -563,8 +563,8 @@ mod tests {
                 message: "Le nom du client est obligatoire.".to_string(),
             },
             FieldError {
-                field: DocumentField::ClientAddress,
-                message: "L'adresse du client est obligatoire.".to_string(),
+                field: DocumentField::EventDate,
+                message: "La date de l'événement est obligatoire.".to_string(),
             },
         ];
 

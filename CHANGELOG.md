@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- L'adresse du client n'est plus obligatoire. Elle reste imprimée quand elle
+  est saisie, et la ligne disparaît du document sinon — pas d'étiquette vide.
+
+### Removed
+
+- Le bouton « Exporter » de l'aperçu. Il faisait la première moitié de
+  « Partager » — les mêmes fichiers, le même appel — puis les laissait dans le
+  stockage privé de l'app, qu'aucun gestionnaire de fichiers ne lit, en
+  annonçant un nom de fichier introuvable. « Partager » vers Fichiers reste le
+  chemin qui pose vraiment un fichier sur le téléphone.
+
+### Fixed
+
+- Les PDF et PNG exportés retrouvent l'espacement du document de référence.
+  L'interligne du template Typst reprenait le chiffre de la feuille de style
+  (`line-height: 1.32`) sans en retirer la hauteur de capitale, d'où des blocs
+  31 % trop serrés ; et l'espacement de bloc par défaut de Typst s'ajoutait à
+  chaque marge portée depuis le CSS. Les totaux, la puce des conditions et la
+  ligne de clôture de la facture s'alignent aussi sur le modèle. Les documents
+  déjà exportés gardent leur fichier — émis = figé.
+
 ## [0.2.1] - 2026-07-30
 
 ### Fixed
