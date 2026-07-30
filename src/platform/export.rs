@@ -70,8 +70,8 @@ fn file_label(path: &Path) -> String {
 
 /// Exports an issued document as `{devis|facture}-{n}.pdf` and `.png` under
 /// `exports/` (ARCHI §4). Existing files are kept as-is (issued documents are
-/// frozen); only missing files are regenerated, so the aperçu's « Exporter »
-/// action doubles as the re-export path.
+/// frozen); only missing files are regenerated, so « Partager » and « Envoyer »
+/// double as the re-export path.
 pub fn export_document(input: &DocumentInput, number: i64) -> Result<DocumentExport, ExportError> {
     // ponytail: one export at a time (reference or document); revisit only if
     // production needs parallel jobs.
@@ -562,7 +562,10 @@ impl From<&ClientInput> for TemplateClient {
     fn from(client: &ClientInput) -> Self {
         Self {
             name: client.name.clone(),
-            address: client.address.clone(),
+            // Trimmed because the template drops the row on `== ""` and she is
+            // no longer required to fill it: an address of spaces would print
+            // the label with nothing after it.
+            address: client.address.trim().to_string(),
             email: client.email.clone().unwrap_or_default(),
             phone: client.phone.clone().unwrap_or_default(),
             business_id: client.business_id.clone().unwrap_or_default(),
@@ -754,6 +757,25 @@ mod tests {
             text.contains("Règlement : *30 %* #panic() $x$ [a]."),
             "Typst syntax was not shown verbatim: {text}"
         );
+    }
+
+    // The address stopped being mandatory; the printed card has to lose the row
+    // rather than print a dangling « Adresse : ».
+    #[test]
+    fn compiles_a_quote_without_a_client_address() {
+        let mut input = reference_document();
+        input.client.address = "   ".to_string();
+
+        let pdf = compile_pdf(&input, 7).expect("quote PDF should compile");
+
+        let text = pdf.page_texts.join(" ");
+        assert!(
+            !text.contains("Adresse :"),
+            "address row still printed: {text}"
+        );
+        // The rows around it still print, so the card did not collapse.
+        assert!(text.contains("Nom / société :"));
+        assert!(text.contains("Adresse de facturation :"));
     }
 
     #[test]

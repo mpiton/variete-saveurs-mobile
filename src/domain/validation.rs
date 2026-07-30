@@ -85,12 +85,10 @@ pub fn validate_document_fields(input: &DocumentInput) -> Vec<FieldError> {
             "Le nom du client est obligatoire.".to_string(),
         );
     }
-    if input.client.address.trim().is_empty() {
-        push(
-            DocumentField::ClientAddress,
-            "L'adresse du client est obligatoire.".to_string(),
-        );
-    }
+    // No rule on the client address on purpose: she bills people who collect
+    // their order on site and leave no address. It prints when she fills it,
+    // and the row disappears from the document when she does not.
+
     if input.lines.is_empty() {
         push(
             DocumentField::Lines,
@@ -302,12 +300,21 @@ mod tests {
     fn rejects_missing_client_and_lines() {
         let mut doc = valid_doc();
         doc.client.name.clear();
-        doc.client.address.clear();
         doc.lines.clear();
         let errors = validate_document(&doc).unwrap_err();
         assert!(errors.contains(&"Le nom du client est obligatoire.".to_string()));
-        assert!(errors.contains(&"L'adresse du client est obligatoire.".to_string()));
         assert!(errors.contains(&"Ajoutez au moins une prestation.".to_string()));
+    }
+
+    #[test]
+    fn accepts_a_client_without_an_address() {
+        let mut doc = valid_doc();
+        doc.client.address.clear();
+        assert!(validate_document(&doc).is_ok());
+
+        doc.client.address = "   ".to_string();
+        assert!(validate_document(&doc).is_ok());
+        assert_eq!(validate_document_fields(&doc), Vec::new());
     }
 
     #[test]
@@ -485,10 +492,6 @@ mod tests {
                 FieldError {
                     field: DocumentField::ClientName,
                     message: "Le nom du client est obligatoire.".to_string(),
-                },
-                FieldError {
-                    field: DocumentField::ClientAddress,
-                    message: "L'adresse du client est obligatoire.".to_string(),
                 },
                 FieldError {
                     field: DocumentField::Lines,

@@ -18,13 +18,8 @@ use crate::platform::export::count_pdf_pages;
 
 use super::{
     app::{DatabaseContext, Route},
-    components::{
-        Button, ButtonVariant, ErrorBlock, IssueConfirmSheet, ShareSheet, Snackbar, issue_label,
-    },
-    issue::{
-        ExportJobState, IssueFlow, IssuePhase, check_before_issue, start_export, start_issue,
-        use_export_notice_dismiss, write_from_worker,
-    },
+    components::{Button, ButtonVariant, ErrorBlock, IssueConfirmSheet, ShareSheet, issue_label},
+    issue::{IssueFlow, IssuePhase, check_before_issue, start_issue, write_from_worker},
     share::{share_file_names, use_share_flow},
 };
 
@@ -192,9 +187,7 @@ pub(super) fn load_preview(
 pub(super) fn Preview(document: Option<i64>) -> Element {
     let database = use_context::<DatabaseContext>();
     let navigator = use_navigator();
-    let export_state = use_signal_sync(|| ExportJobState::Ready);
     let share = use_share_flow();
-    use_export_notice_dismiss(export_state);
     let page_count = use_signal_sync(|| PageCount {
         document,
         pages: PageResult::Unstarted,
@@ -224,18 +217,6 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
         }
         Ok(data) => {
             let draft = data.source == PreviewSource::Draft;
-            let (export_running, export_message) = match &*export_state.read() {
-                ExportJobState::Ready => (false, None),
-                ExportJobState::Running => (true, None),
-                ExportJobState::Done(message) => (false, Some(message.clone())),
-                ExportJobState::Failed(_) => (false, None),
-            };
-            let export_error = match &*export_state.read() {
-                ExportJobState::Failed(message) => Some(message.clone()),
-                _ => None,
-            };
-            let export_input = data.input.clone();
-            let export_number = data.number;
             let (pdf_name, png_name) = share_file_names(&data.kind, data.number);
             let share_input = data.input.clone();
             let share_number = data.number;
@@ -279,24 +260,11 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                             }
                         }
                     }
-                    if let Some(message) = export_error {
-                        ErrorBlock {
-                            title: "Export impossible".to_string(),
-                            message,
-                        }
-                    }
                     if let Some(message) = share.error() {
                         ErrorBlock {
                             title: "Partage impossible".to_string(),
                             message,
                         }
-                    }
-                    // Before the bar, not after: rendered after it the snackbar
-                    // pushed the bar up off the bottom of the window, leaving
-                    // the navigation band in content colour. Same trap the
-                    // fiche hit and fixed (see `.record-sticky`).
-                    if let Some(message) = export_message {
-                        Snackbar { message }
                     }
                     footer { class: "chrome-action-bar preview-action-bar",
                         if draft {
@@ -306,14 +274,12 @@ pub(super) fn Preview(document: Option<i64>) -> Element {
                                 input: data.input.clone(),
                             }
                         } else {
-                            Button {
-                                label: "Exporter".to_string(),
-                                variant: ButtonVariant::Tonal,
-                                loading: export_running,
-                                onclick: move |_| {
-                                    start_export(export_state, export_input.clone(), export_number);
-                                },
-                            }
+                            // « Exporter » used to sit here. It ran the first
+                            // half of « Partager » — same files, same call —
+                            // then left them in the app's private storage,
+                            // where no file manager reaches them, and named
+                            // them in a snackbar. Sharing to « Fichiers » is
+                            // the path that actually lands a file on the phone.
                             Button {
                                 label: "Partager".to_string(),
                                 variant: ButtonVariant::Tonal,

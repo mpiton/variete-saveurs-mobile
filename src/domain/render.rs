@@ -108,13 +108,19 @@ pub fn render_document_html(input: &DocumentInput, number: i64) -> String {
     <div class="party">
       <p class="title">Client</p>
       <div><b>Nom / société :</b> {client_name}</div>
-      <div><b>Adresse :</b> {client_address}</div>
 "#,
-        client_name = escape(&input.client.name),
-        client_address = escape(&input.client.address)
+        client_name = escape(&input.client.name)
     )
     .expect("writing to String cannot fail");
 
+    if let Some(address) = non_empty(Some(&input.client.address)) {
+        writeln!(
+            html,
+            r#"      <div><b>Adresse :</b> {}</div>"#,
+            escape(address)
+        )
+        .expect("writing to String cannot fail");
+    }
     if let Some(business_id) = non_empty(input.client.business_id.as_deref()) {
         writeln!(
             html,
@@ -508,6 +514,22 @@ mod tests {
 
         assert!(html.contains("FACTURE"));
         assert!(!html.contains("Pénalités de retard"));
+    }
+
+    // She bills people who collect their order on site and leave no address.
+    #[test]
+    fn client_address_row_is_dropped_when_she_left_it_empty() {
+        let mut doc = document(DocumentKind::Quote);
+        doc.client.address = "  ".to_string();
+        doc.client.billing_address = Some("2 rue de facturation".to_string());
+
+        let html = render_document_html(&doc, 9);
+
+        assert!(!html.contains("<b>Adresse :</b>"));
+        assert!(html.contains("Client &amp; Co"));
+        // The optional rows below it still print, in order.
+        assert!(html.contains("<b>Identifiant :</b>"));
+        assert!(html.contains("<b>Adresse de facturation :</b> 2 rue de facturation"));
     }
 
     #[test]
