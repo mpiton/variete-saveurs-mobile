@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Lockfile bumped for 12 RustSec advisories, all reached through `reqwest`'s
+  TLS stack or dioxus' desktop shell: `rustls` 0.23.46 (RUSTSEC-2026-0285,
+  -0346, -0348, -0349), `rustls-webpki` 0.103.16 (RUSTSEC-2026-0382),
+  `webpki-roots` 1.0.11 (RUSTSEC-2026-0381), `quinn-proto` 0.11.19
+  (RUSTSEC-2026-0338 to -0342) and `webbrowser` 1.2.5 (RUSTSEC-2026-0257).
+  `tokio` 1.54.1 also clears the unsoundness advisory RUSTSEC-2026-0386,
+  which `cargo deny` blocks on. Only these six crates move; dioxus stays at
+  0.7.9 to match the pinned `dx` CLI.
+
 ## [0.2.2] - 2026-07-30
 
 ### Changed
