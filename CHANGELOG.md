@@ -15,8 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema and the migrations are unchanged. The lockfile also moves `url` to
   2.5.9 (RUSTSEC-2026-0592, stack overflow in `Url::origin()` on nested
   `blob:` URLs), with `form_urlencoded` 1.2.3, and `quinn-udp` to 0.5.16
-  (RUSTSEC-2026-0538, not compiled into the APK). Only these five crates move;
-  dioxus stays at 0.7.9 to match the pinned `dx` CLI.
+  (RUSTSEC-2026-0538, not compiled into the APK), and `cookie` to 0.18.3
+  (RUSTSEC-2026-0594, private cookie nonces repeating across `fork`; the
+  affected `private` feature is not compiled). Only these six crates move;
+  dioxus stays at 0.7.9 to match the pinned `dx` CLI. A host test now fails if
+  the bundled SQLite is older than 3.54.0.
 
 ## [0.2.3] - 2026-10-26
 

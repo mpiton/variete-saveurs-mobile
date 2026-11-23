@@ -719,6 +719,17 @@ mod tests {
         assert_eq!(load_draft(&connection).expect("load draft"), Some(input));
     }
 
+    /// The accounting database runs on the SQLite bundled into the APK.
+    /// Anything older than 3.54.0 carries RUSTSEC-2026-0459 (CVE-2026-119375).
+    #[test]
+    fn the_bundled_sqlite_includes_the_rustsec_2026_0459_fix() {
+        assert!(
+            rusqlite::version_number() >= 3_054_000,
+            "bundled SQLite {} predates the RUSTSEC-2026-0459 fix (3.54.0)",
+            rusqlite::version()
+        );
+    }
+
     #[test]
     fn the_search_matches_the_client_name_through_accents_and_case() {
         let (_file, mut connection) = initialized_connection();
