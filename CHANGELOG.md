@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `rusqlite` 0.41.1 brings the bundled SQLite from 3.53.2 to 3.54.1 through
+  `libsqlite3-sys` 0.39.1 (RUSTSEC-2026-0459, CVE-2026-119375). It is the
+  SQLite compiled into the APK, the one holding the accounting database; the
+  schema and the migrations are unchanged. The lockfile also moves `url` to
+  2.5.9 (RUSTSEC-2026-0592, stack overflow in `Url::origin()` on nested
+  `blob:` URLs), with `form_urlencoded` 1.2.3, and `quinn-udp` to 0.5.16
+  (RUSTSEC-2026-0538, not compiled into the APK). Only these five crates move;
+  dioxus stays at 0.7.9 to match the pinned `dx` CLI.
+
 ## [0.2.3] - 2026-10-26
 
 ### Security
