@@ -23,6 +23,15 @@ unmaintained = "workspace"
 #   logger calling `rand::rng()`. wry → kuchikiki → selectors → phf_codegen,
 #   a [build-dependencies] edge: perfect-hash codegen at build time, not linked.
 
+# Temporary, until the chrono -> jiff/time migration of #82 lands.
+# RUSTSEC-2026-0543 — chrono is unmaintained (published 2026-09-14). It is not a
+# vulnerability and no fixed chrono exists. Without this entry every PR fails the
+# Deny gate, including security fixes. If RustSec publishes a chrono
+# vulnerability, it gets its own ID and still breaks the build.
+ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, migration tracked in #82" },
+]
+
 [licenses]
 # devis-mobile itself is a private app (publish = false), no license required.
 private = { ignore = true }
