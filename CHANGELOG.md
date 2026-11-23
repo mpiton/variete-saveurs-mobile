@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-23
+
 ### Security
 
 - `rusqlite` 0.41.1 brings the bundled SQLite from 3.53.2 to 3.54.1 through
@@ -20,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   affected `private` feature is not compiled). Only these six crates move;
   dioxus stays at 0.7.9 to match the pinned `dx` CLI. A host test now fails if
   the bundled SQLite is older than 3.54.0.
+- `cargo deny` ignores RUSTSEC-2026-0543 (chrono unmaintained, no fixed
+  version, not a vulnerability) until the migration tracked in #82.
 
 ## [0.2.3] - 2026-10-26
 
